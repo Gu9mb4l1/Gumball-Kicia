@@ -6,7 +6,6 @@ print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
 
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 if getgenv().KiciaRebuild and getgenv().KiciaRebuild.Unload then
     pcall(getgenv().KiciaRebuild.Unload)
 end
@@ -2097,19 +2096,30 @@ end
 
 local tbl20 = { "GradientTop", v86[187], v86[70], v86[141] }
 local tbl21 = {}
-local background = v115.Background
-
-for _, v116 in tbl20, nil, nil do
-local v117 = v115[v116]
-tbl21[v116] = { R = v117.R / background.R, G = v117.G / background.G, B = v117.B / background.B }
+-- Original background was pure black, so dividing by its RGB channels
+-- produced invalid multipliers. Use the authored gradient colors as the
+-- reference and tint them from the selected background instead.
+local background = Color3.fromRGB(18, 18, 18)
+for _, token in tbl20, nil, nil do
+local base = v115[token]
+tbl21[token] = { R = base.R / background.R, G = base.G / background.G, B = base.B / background.B }
 end
 
 local function fn38(I,W)if  v115 [I]==W then return;end; v115 [I]=W;local N= tbl18 [I];if N==nil then return;end;for P in N,nil,nil do local N=P._propBindingsByToken[I];if N~=nil then for a,a in N,nil,nil do a.Instance[a.Property]=W;end;end;for a,a in P._gradients,nil,nil do if table.find(a.Tokens,I)~=nil then a.Gradient.Color= fn36 (a.Tokens,a.Times);end;end;N=P._statefulApplyByToken[I];if N~=nil then for l,l in N,nil,nil do l(W);end;end;end;end
 
-local function fn39(arg)
-for _, v116 in tbl20, nil, nil do
-local v117 = tbl21[v116]
-fn38(v116, Color3.new(math.clamp(arg.R * v117.R, v86[186], 1), math.clamp(arg.G * v117.G, 0, 1), math.clamp(arg.B * v117.B, 0, 1)))
+local function fn39(backgroundColor)
+for _, token in tbl20, nil, nil do
+local base = tbl21[token]
+local reference = Color3.fromRGB(18, 18, 18)
+local original = Color3.new(math.clamp(reference.R * base.R, 0, 1), math.clamp(reference.G * base.G, 0, 1), math.clamp(reference.B * base.B, 0, 1))
+-- Keep gradient shading while following the chosen background hue.
+local strength = math.max(original.R, original.G, original.B)
+local color = Color3.new(
+math.clamp(backgroundColor.R + strength * (1 - backgroundColor.R), 0, 1),
+math.clamp(backgroundColor.G + strength * (1 - backgroundColor.G), 0, 1),
+math.clamp(backgroundColor.B + strength * (1 - backgroundColor.B), 0, 1)
+)
+fn38(token, color)
 end
 end
 
@@ -5798,7 +5808,30 @@ v118.connectClick(trove, v135, function()
 arg5.RemoveStop()
 end)
 
-local function repaint(...) end
+local function repaint(immediate)
+local hue = math.clamp(arg3.Hue, 0, 1)
+local sat = math.clamp(arg3.Sat, 0, 1)
+local val = math.clamp(arg3.Val, 0, 1)
+local rgb = Color3.fromHSV(hue, sat, val)
+frame4.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+frame7.Position = UDim2.fromScale(sat, 1 - val)
+frame7.BackgroundColor3 = rgb
+uiStroke.Color = val > 0.55 and Color3.new(0, 0, 0) or Color3.new(1, 1, 1)
+instance8.Position = UDim2.fromScale(0.5, hue)
+instance10.BackgroundColor3 = rgb
+frame14.Position = UDim2.fromScale(0.5, math.clamp(arg3.Alpha, 0, 1))
+-- These are Roblox TextBox instances, not library widgets.
+-- Writing Text is supported; indexing a missing Set method throws.
+if v131 ~= nil and v131:IsA("TextBox") and not v131:IsFocused() then
+v131.Text = tostring(math.floor((1 - arg3.Alpha) * 100 + 0.5)) .. "%"
+end
+if v132 ~= nil and v132:IsA("TextBox") and not v132:IsFocused() then
+v132.Text = "#" .. rgb:ToHex()
+end
+if arg3.Mode == "Gradient" then
+fn42(immediate)
+end
+end
 tbl22.Repaint = repaint
 
 return {
@@ -17785,15 +17818,18 @@ end
 
 fn40(v123.Key, v125)
 
+-- Use the shared color/config binding so the theme picker writes through
+-- the same path as other color controls and stays synchronized with the theme.
 local v126 = v122:AddColor({
 Label = v123.Label,
 Default = { Rgb = v125, Alpha = 1 },
+
 OnChanged = function(arg6)
-if config ~= nil then
-local rgb = arg6.Rgb
-config:Set(v119.appendPath(arg5, v123.Key), rgb)
-else
+if typeof(arg6) == "table" and typeof(arg6.Rgb) == "Color3" then
 fn40(v123.Key, arg6.Rgb)
+if config ~= nil then
+config:Set(v119.appendPath(arg5, v123.Key), arg6.Rgb)
+end
 end
 end,
 })
@@ -19789,7 +19825,7 @@ return bh.c
 end
 end
 do -- bi
-local function fn35() tbl17 .a3();return{Movement={WalkSpeed={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},JumpPower={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=false,Invisible=false}},Flight={Enabled=false,Speed=100,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Sliding={Enabled=false,Speed=10,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Noclip={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},AutoStrafe={Enabled=false,Speed=50,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},LongJump={Enabled=false,Keybind={State=false,Kind="Tap",Bind=nil,ShowInList=true,Invisible=false},Mode="Under Feet",Force=60,UpwardVelocity=20,Behind=8},MovementRecorder={Enabled=false,HideUI=false,HideNotifications=false,OpenDistance=3,RenderDistance=50,LookAlignSpeed=180,AlignSnapDistance=0.2,LookSmoothing=35,Record={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}},Replay={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}}}},Removables={NoFlashbang=false,NoBurnEffect=false,NoAdsVignette=false,NoScopeOverlay=false,NoScopeReticle=false,NoGunTracers=false,NoMuzzleFlash=false,NoHitmarker=false},ThirdPerson={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false},ShowReplica=false,RayCheck=false,X=3,Y=2,Z=6},CameraFov={Enabled=false,Value=70},StretchedResolution={Enabled=false,X=13,Y=10},CustomCrosshair={Enabled=false,Style="Lines",Image={Name="",Size=32,Transparency=0},Length=12,Thickness=2,Gap=6,Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}},Rotation={Enabled=false,Angle=0,Speed=90},Spread={Enabled=false,Range={Min=4,Max=16},Speed=3},Top={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Bottom={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Left={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Right={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Text={Enabled=false,Content="",Font="Inconsolata",Size=14,Offset=24,Color=ColorSequence.new(Color3.fromRGB(255,255,255)),Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}}},FollowTarget={Enabled=false,Mode="Crosshair",Speed=20,Damper=1,SnapDistance=5}},AnimationPlayer={Enabled=false,Animation="Cat Girl Bounce",CustomId="",Speed=1,Start=0,End=100},DeviceSpoof={Enabled=false,SpoofType="VR"},PlayerSpoofer={LocalPlayer={Name={Enabled=false,Value="Nosniy"},DisplayName={Enabled=false,Value="Nosniy"},Avatar={Enabled=false,Value="20349956"},Ping={Enabled=false,Value="Low"},Keys={Enabled=false,Value=999},EventCurrency={Enabled=false,Value=9999},Winstreak={Enabled=false,Value=999},Level={Enabled=false,Value=999},CasualWins={Enabled=false,Value=99999},RankedWins={Enabled=false,Value=9999},CasualWinPercent={Enabled=false,Value=100},RankedWinPercent={Enabled=false,Value=100},RankedElo={Enabled=false,Value=3600},LeaderboardRank={Enabled=false,Value=1},FavoriteMap={Enabled=false,Value="Arena"},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false,Value=true},RobloxEmployee={Enabled=false,Value=true},NosniyTeam={Enabled=false}},OtherPlayers={Name={Enabled=false,Value=""},DisplayName={Enabled=false,Value=""},Avatar={Enabled=false,Value=""},Winstreak={Enabled=false,Value=0},Level={Enabled=false,Value=0},CasualWins={Enabled=false,Value=0},RankedWins={Enabled=false,Value=0},CasualWinPercent={Enabled=false,Value=0},RankedWinPercent={Enabled=false,Value=0},RankedElo={Enabled=false,Value=0},LeaderboardRank={Enabled=false,Value=200},FavoriteMap={Enabled=false,Value=""},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false},RobloxEmployee={Enabled=false},NosniyTeam={Enabled=false}}}};end
+local function fn35() tbl17 .a3();return{Movement={WalkSpeed={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},JumpPower={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=false,Invisible=false}},Flight={Enabled=false,Speed=100,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Sliding={Enabled=false,Speed=10,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Noclip={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},AutoStrafe={Enabled=false,Speed=50,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},LongJump={Enabled=false,Keybind={State=false,Kind="Tap",Bind=nil,ShowInList=true,Invisible=false},Mode="Under Feet",Force=60,UpwardVelocity=20,Behind=8},MovementRecorder={Enabled=false,HideUI=false,HideNotifications=false,OpenDistance=3,RenderDistance=50,LookAlignSpeed=180,AlignSnapDistance=0.2,LookSmoothing=35,Record={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}},Replay={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}}}},Removables={NoFlashbang=false,NoBurnEffect=false,NoAdsVignette=false,NoScopeOverlay=false,NoScopeReticle=false,NoGunTracers=false,NoMuzzleFlash=false,NoHitmarker=false},ThirdPerson={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false},ShowReplica=false,RayCheck=false,X=3,Y=2,Z=6},CameraFov={Enabled=false,Value=70},StretchedResolution={Enabled=false,X=13,Y=10},CustomCrosshair={Enabled=false,Style="Lines",Image={Name="",Size=32,Transparency=0},Length=12,Thickness=2,Gap=6,Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}},Rotation={Enabled=false,Angle=0,Speed=90},Spread={Enabled=false,Range={Min=4,Max=16},Speed=3},Top={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Bottom={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Left={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Right={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Text={Enabled=false,Content="",Font="Inconsolata",Size=14,Offset=24,Color=ColorSequence.new(Color3.fromRGB(255,255,255)),Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}}},FollowTarget={Enabled=false,Mode="Crosshair",Speed=20,Damper=1,SnapDistance=5}},AnimationPlayer={Enabled=false,Animation="Cat Girl Bounce",CustomId="",Speed=1,Start=0,End=100},DeviceSpoof={Enabled=false,SpoofType="VR"},CharmSpoof={Enabled=false,Season="Season 0",Rank="Nemesis",Placement=1},PlayerSpoofer={LocalPlayer={Name={Enabled=false,Value="Nosniy"},DisplayName={Enabled=false,Value="Nosniy"},Avatar={Enabled=false,Value="20349956"},Ping={Enabled=false,Value="Low"},Keys={Enabled=false,Value=999},EventCurrency={Enabled=false,Value=9999},Winstreak={Enabled=false,Value=999},Level={Enabled=false,Value=999},CasualWins={Enabled=false,Value=99999},RankedWins={Enabled=false,Value=9999},CasualWinPercent={Enabled=false,Value=100},RankedWinPercent={Enabled=false,Value=100},RankedElo={Enabled=false,Value=3600},LeaderboardRank={Enabled=false,Value=1},FavoriteMap={Enabled=false,Value="Arena"},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false,Value=true},RobloxEmployee={Enabled=false,Value=true},NosniyTeam={Enabled=false}},OtherPlayers={Name={Enabled=false,Value=""},DisplayName={Enabled=false,Value=""},Avatar={Enabled=false,Value=""},Winstreak={Enabled=false,Value=0},Level={Enabled=false,Value=0},CasualWins={Enabled=false,Value=0},RankedWins={Enabled=false,Value=0},CasualWinPercent={Enabled=false,Value=0},RankedWinPercent={Enabled=false,Value=0},RankedElo={Enabled=false,Value=0},LeaderboardRank={Enabled=false,Value=200},FavoriteMap={Enabled=false,Value=""},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false},RobloxEmployee={Enabled=false},NosniyTeam={Enabled=false}}}};end
 
 tbl17.bi = function()
 local bi = tbl17.cache.bi
@@ -22908,14 +22944,61 @@ local GuiNameSpoofer = v115.new("player_spoofer.GuiNameSpoofer")
 local tbl18 = {}
 local tbl19 = {}
 local playerIdentities = arg._playerIdentities
-local function fn36(...) end
+local function fn36()
+-- Rebuild the original-name lookup table whenever a player identity is added or removed.
+table.clear(tbl19)
+for player, identity in pairs(playerIdentities._identityByPlayer) do
+if type(identity.Name) == "string" and identity.Name ~= "" then
+ table.insert(tbl19, { Player = player, Kind = "Name", Name = identity.Name })
+end
+if type(identity.DisplayName) == "string" and identity.DisplayName ~= "" and identity.DisplayName ~= identity.Name then
+ table.insert(tbl19, { Player = player, Kind = "DisplayName", Name = identity.DisplayName })
+end
+end
+end
 local function fn37(I,W)if W=="Name"then return  playerIdentities :GetPresented(I);end;return  playerIdentities :GetPresentedDisplay(I);end
 local function fn38(l,I,W)local N,P,a={},1,0;while true do local e,c=l:find(I,P,true);if e==nil or c==nil then break;end;if P<e then table.insert(N,l:sub(P,e-1));end;table.insert(N,W);a+=1;P=c+1;end;if a==0 then return l,0;end;if P<=#l then table.insert(N,l:sub(P));end;return table.concat(N),a;end
-local function fn39(I)local W={};local N=I;for I,P in  tbl19 ,nil,nil do I= fn37 (P.Player,P.Kind);local a,e= fn38 (N,P.Name,I);if e>0 then W[P.Player]=true;N=a;end;end;return W,N;end
-local function fn40(...) end
-local function fn41(...) end
+local function fn39(I)local W={};local N=I;for I,P in  tbl19 ,nil,nil do local presented=fn37(P.Player,P.Kind);local replaced,count=fn38(N,P.Name,presented);if count>0 then W[P.Player]=true;N=replaced;end;end;return W,N;end
+local function fn40(I)
+local entry=tbl18[I]
+if entry==nil or entry.Tracked==nil or not I.Parent then return end
+local tracked=entry.Tracked
+if tracked.Updating then return end
+local current=I.Text
+-- Text changes made by the game become the new source text; our own spoofed text does not.
+if current~=tracked.SpoofedText then tracked.OriginalText=current end
+local playerSet,spoofedText=fn39(tracked.OriginalText)
+tracked.PlayerSet=playerSet
+tracked.SpoofedText=spoofedText
+if current~=spoofedText then
+tracked.Updating=true
+I.Text=spoofedText
+tracked.Updating=false
+end
+end
+local function fn41(I,tracked)
+if tracked==nil then return end
+if I.Parent and I.Text==tracked.SpoofedText and tracked.SpoofedText~=tracked.OriginalText then
+tracked.Updating=true
+I.Text=tracked.OriginalText
+tracked.Updating=false
+end
+end
 local function fn42(I,W)local N= tbl18 [I];if N==nil then return;end; tbl18 [I]=nil;N.TextChangedConnection:Disconnect();N.DestroyingConnection:Disconnect();if W and N.Tracked~=nil then  fn41 (I,N.Tracked);end;end
-local function fn43(...) end
+local function fn43(I)
+if not I:IsA("TextLabel") and not I:IsA("TextButton") then return end
+if tbl18[I]~=nil then return end
+local tracked={OriginalText=I.Text,SpoofedText=I.Text,PlayerSet={},Updating=false}
+local entry={Tracked=tracked}
+tbl18[I]=entry
+entry.TextChangedConnection=I:GetPropertyChangedSignal("Text"):Connect(function()
+if not tracked.Updating then fn40(I) end
+end)
+entry.DestroyingConnection=I.Destroying:Connect(function()
+fn42(I,false)
+end)
+fn40(I)
+end
 fn36()
 
 v116(GuiNameSpoofer, function(arg2, arg3)
@@ -28758,7 +28841,7 @@ end
 if arg.EnumType == Enum.KeyCode then
 return v86[34]
 end
-return arg.EnumType == Enum.KeyCode or arg.EnumType == Enum.UserInputType and arg == Enum.UserInputType.MouseButton1 and arg == Enum.UserInputType.MouseButton2 and arg == Enum.UserInputType.MouseButton3
+return arg.EnumType == Enum.KeyCode or (arg.EnumType == Enum.UserInputType and (arg == Enum.UserInputType.MouseButton1 or arg == Enum.UserInputType.MouseButton2 or arg == Enum.UserInputType.MouseButton3))
 end
 
 local function fn38(arg)
@@ -28798,8 +28881,39 @@ return v117.VoidOk
 end
 local v121 = v116.NavigateTo(arg3, arg4)
 if not tbl19.isKeybindConfig(v121) then
-local str7 = table.concat(arg4, ".")
-return v117.err("KeybindRegistry", "registerPath", string.format("invalid keybind configuration at path `%s`", tostring(str7)))
+-- Repair only malformed keybind fields (e.g. after loading JSON).
+-- Preserve valid user-selected modes and binds.
+local path = table.concat(arg4, ".")
+if type(v121) ~= "table" then
+return v117.err("KeybindRegistry", "registerPath", string.format("invalid keybind configuration at path `%s`", path))
+end
+local base = arg4
+local function repair(field, value)
+local fieldPath = v119(arg4, { field })
+arg.Set(fieldPath, value)
+v121[field] = value
+end
+if type(v121.State) ~= "boolean" then
+repair("State", false)
+end
+if not fn36(v121.Kind) then
+repair("Kind", "Hold")
+end
+if v121.Bind ~= nil and not fn37(v121.Bind) then
+local bind = v121.Bind
+if type(bind) == "string" then
+local keyName = bind:match("^Enum%.KeyCode%.(.+)$") or bind:match("^KeyCode%.(.+)$")
+local mouseName = bind:match("^Enum%.UserInputType%.(MouseButton[123])$") or bind:match("^UserInputType%.(MouseButton[123])$")
+local parsed = (keyName and Enum.KeyCode[keyName]) or (mouseName and Enum.UserInputType[mouseName])
+if parsed and fn37(parsed) then bind = parsed else bind = nil end
+else
+bind = nil
+end
+repair("Bind", bind)
+end
+if not tbl19.isKeybindConfig(v121) then
+return v117.err("KeybindRegistry", "registerPath", string.format("invalid keybind configuration at path `%s`", path))
+end
 end
 local v122 = fn38(arg4)
 local v123 = v119(arg4, { "State" })
@@ -52539,6 +52653,12 @@ if chams.Enabled then
 local v123 = v115.new(arg2, chams.Color, chams.Transparency, chams.Duration, chams.Material)
 table.insert(arg._chams, v123)
 end
+-- Roblox's built-in BlurEffect is global, not per-side. Blend it in only
+-- near maximum intensity so 100 produces genuine full-screen blur on turns.
+if arg._blurEffect then
+local fullScreenBlend = math.clamp((intensity - 0.75) / 0.25, 0, 1)
+arg._blurEffect.Size = 36 * fullScreenBlend * math.abs(arg._edgeStrength)
+end
 end
 
 index2.PreRender = function(arg, arg2)
@@ -53519,6 +53639,7 @@ tbl17.cF()
 local v116 = tbl17.k()
 local v117 = cloneref(game:GetService("Players"))
 local v118 = cloneref(game:GetService("Workspace"))
+local soundService = cloneref(game:GetService("SoundService"))
 local localPlayer = v117.LocalPlayer
 local tbl18 = { "LeftFoot", "RightFoot" }
 local tbl19 = { "Left Leg", "Right Leg" }
@@ -53543,7 +53664,14 @@ return parent2
 end
 end
 
-return nil
+-- Match audio is sometimes parented directly to a character model.
+if parent:IsA("Model") then
+return parent.PrimaryPart or parent:FindFirstChild("HumanoidRootPart") or parent:FindFirstChildWhichIsA("BasePart", true)
+end
+return parent:FindFirstAncestorWhichIsA("Model") and (function()
+local model = parent:FindFirstAncestorWhichIsA("Model")
+return model.PrimaryPart or model:FindFirstChild("HumanoidRootPart") or model:FindFirstChildWhichIsA("BasePart", true)
+end)() or nil
 end
 
 local function fn37(arg)
@@ -53605,6 +53733,7 @@ _lastPlayedAtBySound = {},
 _activeEffects = {},
 _circlePool = {},
 _footprintPool = {},
+_soundServiceConnection = nil,
 }
 
 setmetatable(tbl20, index2)
@@ -53614,14 +53743,14 @@ end
 
 index2._Initialize = function(arg)
 arg._trove:Connect(v115:GetPropertyChangedSignal({ "SoundVisualizer", "Enabled" }), function(arg2)
-arg:_SetEnabled(arg2)
+arg:_SetEnabled(v115.Data.SoundVisualizer.Enabled)
 end)
 
 arg:_SetEnabled(v115.Data.SoundVisualizer.Enabled)
 end
 
 index2._SetEnabled = function(arg, arg2)
-if arg2 == arg._descendantAddedConnection ~= nil then
+if arg2 == (arg._descendantAddedConnection ~= nil) then
 return
 end
 
@@ -53633,14 +53762,17 @@ end
 end
 
 index2._StartTracking = function(arg)
-arg._descendantAddedConnection = v118.DescendantAdded:Connect(function(descendant)
+local function onAdded(descendant)
 if descendant:IsA("Sound") then
 arg:_TrackSound(descendant)
 end
-end)
-
-for _, v119 in v118:QueryDescendants("Sound") do
-arg:_TrackSound(v119)
+end
+arg._descendantAddedConnection = v118.DescendantAdded:Connect(onAdded)
+arg._soundServiceConnection = soundService.DescendantAdded:Connect(onAdded)
+for _, root in ipairs({v118, soundService}) do
+for _, descendant in ipairs(root:GetDescendants()) do
+onAdded(descendant)
+end
 end
 end
 
@@ -53651,9 +53783,14 @@ return
 end
 arg._descendantAddedConnection = nil
 descendantAddedConnection:Disconnect()
+if arg._soundServiceConnection then
+arg._soundServiceConnection:Disconnect()
+arg._soundServiceConnection = nil
+end
 
 for _, v119 in arg._hooksBySound, nil, nil do
 v119.Played:Disconnect()
+v119.Playing:Disconnect()
 v119.Destroying:Disconnect()
 end
 
@@ -53676,6 +53813,11 @@ end
 while true do
 end
 end),
+Playing = arg2:GetPropertyChangedSignal("Playing"):Connect(function()
+if arg2.Playing then
+arg:_OnPlayed(arg2)
+end
+end),
 Destroying = arg2.Destroying:Connect(function()
 arg:_ForgetSound(arg2)
 end),
@@ -53690,6 +53832,7 @@ end
 arg._hooksBySound[arg2] = nil
 arg._lastPlayedAtBySound[arg2] = nil
 v119.Played:Disconnect()
+v119.Playing:Disconnect()
 v119.Destroying:Disconnect()
 end
 
@@ -53804,8 +53947,11 @@ arg:_PushEffect({ Adornment = v119, IsCircle = false, Elapsed = v86[186], Durati
 end
 
 index2._PassesSourceFilter = function(arg, arg2, arg3)
-if arg2 == "All" or arg3 == nil then
+if arg2 == "All" then
 return true
+end
+if arg3 == nil then
+return false
 end
 local flag19 = arg3 == localPlayer.Character
 if arg2 == "Self" then
@@ -53817,16 +53963,15 @@ return false
 end
 local v119 = arg._fighters.StateByModel[arg3]
 
-if v119 ~= nil then
-if arg2 == "Enemies" and not v119.IsEnemy then
-return v86[153]
+if v119 == nil then
+return false
 end
-
-if arg2 == "Team" and v119.IsEnemy then
-return v86[153]
+if arg2 == "Enemies" then
+return v119.IsEnemy == true
 end
+if arg2 == "Team" then
+return v119.IsEnemy == false
 end
-
 return true
 end
 
@@ -53865,7 +54010,7 @@ return
 end
 local now2 = os.clock()
 local v119 = arg._lastPlayedAtBySound[arg2]
-if v119 ~= nil and now2 - v119 < v86[126] then
+if v119 ~= nil and now2 - v119 < 0.12 then
 return
 end
 arg._lastPlayedAtBySound[arg2] = now2
@@ -53883,22 +54028,40 @@ if rollOffMaxDistance > 0 and magnitude > rollOffMaxDistance then
 return
 end
 local soundVisualizer = v115.Data.SoundVisualizer
-if soundVisualizer.MinVolume > 0 and arg2.Volume < soundVisualizer.MinVolume then
+local audibleVolume = arg2.Volume * (rollOffMaxDistance > 0 and (1 - math.clamp(magnitude / rollOffMaxDistance, 0, 1)) or 1)
+if audibleVolume < soundVisualizer.MinVolume then
 return
 end
 local model = v120:FindFirstAncestorOfClass("Model")
-if not arg:_PassesSourceFilter(soundVisualizer.Source, model) then
+local character = nil
+while model ~= nil do
+if model:FindFirstChildOfClass("Humanoid") then
+character = model
+break
+end
+model = model.Parent and model.Parent:FindFirstAncestorOfClass("Model") or nil
+end
+if not arg:_PassesSourceFilter(soundVisualizer.Source, character) then
 return
 end
-local n = math.clamp(arg2.Volume * (rollOffMaxDistance > 0 and 1 - math.clamp(magnitude / rollOffMaxDistance, 0, v86[63]) or 1), v86[186], 1)
+local n = math.clamp(audibleVolume, 0, 1)
 local n33 = 0.6 + 1.9 * n
-local tbl20 = model ~= nil and fn37(model) or {}
-local flag19 = #tbl20 > 0
-if not soundVisualizer.Types[flag19 and "Footsteps" or "Other"] then
+local feet = character ~= nil and fn37(character) or {}
+local lowerName = string.lower(arg2.Name)
+local isFootstep = character ~= nil and (
+string.find(lowerName, "foot", 1, true) ~= nil
+or string.find(lowerName, "step", 1, true) ~= nil
+or string.find(lowerName, "walk", 1, true) ~= nil
+or string.find(lowerName, "run", 1, true) ~= nil
+or string.find(lowerName, "land", 1, true) ~= nil
+or string.find(lowerName, "movement", 1, true) ~= nil
+)
+local soundType = isFootstep and "Footsteps" or "Other"
+if not soundVisualizer.Types[soundType] then
 return
 end
-local footsteps = flag19 and soundVisualizer.Footsteps or soundVisualizer.Other
-arg:_SpawnVisuals(footsteps.Mode, v120, tbl20, footsteps.UseLoudnessColor and fn38(n) or footsteps.Color, n33)
+local settings = soundVisualizer[soundType]
+arg:_SpawnVisuals(settings.Mode, v120, isFootstep and feet or {}, settings.UseLoudnessColor and fn38(n) or settings.Color, n33)
 end
 
 index2.Destroy = function(arg)
@@ -57474,12 +57637,13 @@ do -- hD
 local function fn35()
 local v115 = tbl17.bG()
 local v116 = tbl17.k()
-local v117 = cloneref(game:GetService("Lighting"))
+local v117 = cloneref(game:GetService("CoreGui"))
+local mouseInput = game:GetService("UserInputService")
 local index2 = {}
 index2.__index = index2
 
 index2.new = function()
-local tbl18 = { _trove = v116.new(), _activeTrove = nil, _blurEffect = nil, _lastCameraCFrame = nil }
+local tbl18 = { _trove = v116.new(), _activeTrove = nil, _edgeGui = nil, _edgeLayers = nil, _edgeStrength = 0, _blurEffect = nil }
 setmetatable(tbl18, index2)
 tbl18:_Initialize()
 return tbl18
@@ -57493,8 +57657,6 @@ arg:_Rebuild()
 end
 
 trove:Connect(v115:GetPropertyChangedSignal({ "MotionBlur", "Enabled" }), fn36)
-trove:Connect(v115:GetPropertyChangedSignal({ "MotionBlur", "Intensity" }), fn36)
-trove:Connect(v115:GetPropertyChangedSignal({ "MotionBlur", "Sensitivity" }), fn36)
 
 if v115.Data.MotionBlur.Enabled then
 arg:_Rebuild()
@@ -57502,50 +57664,42 @@ end
 end
 
 index2._Rebuild = function(arg)
-local activeTrove = arg._activeTrove
-
-if activeTrove ~= nil then
+if arg._activeTrove then
+arg._activeTrove:Destroy()
 arg._activeTrove = nil
-arg._blurEffect = nil
-arg._lastCameraCFrame = nil
-activeTrove:Destroy()
 end
-
+arg._blurEffect = nil
+arg._edgeStrength = 0
 if not v115.Data.MotionBlur.Enabled then
 return
 end
-local v118 = arg._trove:Extend()
-arg._activeTrove = v118
-local blurEffect = Instance.new("BlurEffect")
-blurEffect.Size = 0
-blurEffect.Parent = v117
-v118:Add(blurEffect)
-arg._blurEffect = blurEffect
+local activeTrove = arg._trove:Extend()
+arg._activeTrove = activeTrove
+local blur = Instance.new("BlurEffect")
+blur.Name = "GumballMotionBlur"
+blur.Size = 0
+blur.Enabled = true
+blur.Parent = game:GetService("Lighting")
+activeTrove:Add(blur)
+arg._blurEffect = blur
 end
 
-local function fn36(arg, arg2, arg3)
-local n = (arg.Position - arg2.Position).Magnitude / arg3
-local v118, v119 = arg:ToObjectSpace(arg2):ToAxisAngle()
-return n * v86[126] + math.abs(v119) / arg3 * 3
-end
-
-index2._OnPreRender = function(arg, arg2)
-local blurEffect = arg._blurEffect
-if blurEffect == nil then
+index2._OnPreRender = function(arg, dt)
+local blur = arg._blurEffect
+if not blur then
 return
 end
-local currentCamera = workspace.CurrentCamera
-if currentCamera == nil then
-return
-end
-local motionBlur = v115.Data.MotionBlur
-local cFrame = currentCamera.CFrame
-local lastCameraCFrame = arg._lastCameraCFrame
-arg._lastCameraCFrame = cFrame
-if lastCameraCFrame == nil then
-return
-end
-blurEffect.Size = blurEffect.Size + (math.clamp(fn36(cFrame, lastCameraCFrame, arg2) * motionBlur.Sensitivity, 0, motionBlur.Intensity) - blurEffect.Size) * math.min(1, arg2 * v86[149])
+local settings = v115.Data.MotionBlur
+local frameTime = math.max(dt or 0, 1 / 240)
+local horizontal = mouseInput:GetMouseDelta().X
+local intensity = math.clamp(settings.Intensity or 0, 0, 100) / 100
+local sensitivity = math.max(settings.Sensitivity or 0, 0)
+-- Both turning directions activate actual blur; no overlay lines.
+local motion = math.abs(horizontal) / (frameTime * 60)
+local target = math.clamp(motion * sensitivity * 0.14, 0, 1) * intensity
+local smoothing = 1 - math.exp(-(target > arg._edgeStrength and 22 or 13) * frameTime)
+arg._edgeStrength = arg._edgeStrength + (target - arg._edgeStrength) * smoothing
+blur.Size = math.clamp(56 * arg._edgeStrength, 0, 56)
 end
 
 index2.PreRender = function(arg, arg2)
@@ -59682,7 +59836,12 @@ return ir.c
 end
 end
 do -- is
-local function fn35() tbl17 .aE();local I= tbl17 .a2();local W= tbl17 .a7()(I);return function(l)local I=l:AddSection({Title="Device Spoof",Side="left"});I:AddToggle({Label="Enable Device Spoof",Config={"DeviceSpoof","Enabled"}});I:AddDropdown({Label="Presented Platform",Options=W,Config={"DeviceSpoof","SpoofType"}});end;end
+local function fn35() tbl17 .aE();local I= tbl17 .a2();local W= tbl17 .a7()(I);return function(l)local I=l:AddSection({Title="Device Spoof",Side="left"});I:AddToggle({Label="Enable Device Spoof",Config={"DeviceSpoof","Enabled"}});I:AddDropdown({Label="Presented Platform",Options=W,Config={"DeviceSpoof","SpoofType"}});
+local charm=l:AddSection({Title="Charm Spoofer",Side="left"});
+charm:AddToggle({Label="Enable Charm Spoofer",Config={"CharmSpoof","Enabled"}});
+charm:AddDropdown({Label="Season",Options={"Season 0","Season 1","Season 2","Season 3"},Config={"CharmSpoof","Season"}});
+charm:AddDropdown({Label="Rank",Options={"Nemesis","Archnemesis"},Config={"CharmSpoof","Rank"}});
+charm:AddSlider({Label="Top Placement",Min=1,Max=200,Step=1,Config={"CharmSpoof","Placement"}});end;end
 
 tbl17.is = function()
 local is = tbl17.cache.is
@@ -60206,7 +60365,7 @@ return i5.c
 end
 end
 do -- i6
-local function fn35() tbl17 .aE();return function(l)local I=l:AddGroup({Source=l:AddToggle({Label="Motion Blur",Config={"MotionBlur","Enabled"}})});I:AddSlider({Label="Intensity",Min=0,Max=56,Step=0.01,Config={"MotionBlur","Intensity"}});I:AddSlider({Label="Sensitivity",Min=0,Max=5,Step=0.01,Config={"MotionBlur","Sensitivity"}});end;end
+local function fn35() tbl17 .aE();return function(l)local I=l:AddGroup({Source=l:AddToggle({Label="Motion Blur",Config={"MotionBlur","Enabled"}})});I:AddSlider({Label="Intensity",Min=0,Max=100,Step=0.01,Config={"MotionBlur","Intensity"}});I:AddSlider({Label="Sensitivity",Min=0,Max=5,Step=0.01,Config={"MotionBlur","Sensitivity"}});end;end
 
 tbl17.i6 = function()
 local i6 = tbl17.cache.i6
@@ -60656,6 +60815,237 @@ end
 return ji.c
 end
 end
+;(function()
+    local Players=game:GetService("Players")
+    local ReplicatedStorage=game:GetService("ReplicatedStorage")
+    local LocalPlayer=Players.LocalPlayer
+    local seasonCfg={}
+    local seasonNames={[0]="Zero",[1]="Warp",[2]="Polar",[3]="Fame"}
+    local seasonByName={Zero=0,Warp=1,Polar=2,Fame=3}
+    local seasonLib,seasonOriginal,seasonReplacement,fighterController
+    local seasonRecords=setmetatable({}, {__mode="k"})
+    local function seasonNumber(value)
+        if type(value)=="number" then return value end
+        if type(value)~="string" then return nil end
+        return seasonByName[value] or tonumber(value:match("^Season (%d+)$")) or tonumber(value)
+    end
+    local function resolveSeasonLibrary()
+        if seasonLib then return seasonLib end
+        local ok,result=pcall(function()
+            local modules=ReplicatedStorage:FindFirstChild("Modules")
+            local module=modules and modules:FindFirstChild("SeasonLibrary")
+            if module then return require(module) end
+        end)
+        if ok and type(result)=="table" then seasonLib=result end
+        return seasonLib
+    end
+    local function seasonRankProfile(index)
+        local lib=resolveSeasonLibrary()
+        local season=lib and lib.Seasons and lib.Seasons[seasonNames[index]]
+        return season and season.RankProfile
+    end
+    local function resolveRankName(index,rank)
+        local profile=seasonRankProfile(index)
+        if not profile or type(profile.Ranks)~="table" then return nil end
+        if profile.Ranks[rank] then return rank end
+        local normalized=tostring(rank):lower():gsub("[^%a]","")
+        for name in pairs(profile.Ranks) do
+            if tostring(name):lower():gsub("[^%a]","")==normalized then return name end
+        end
+        return nil
+    end
+    local function seasonMetadata(value)
+        local index=seasonNumber(value)
+        local cfg=index~=nil and seasonCfg[index] or nil
+        if not cfg or not cfg.enabled then return nil end
+        local profile=seasonRankProfile(index)
+        local rank=profile and profile.Ranks and profile.Ranks[cfg.rankName]
+        if not rank then return nil end
+        return {SeasonELO=rank.RequiredELO,SeasonLeaderboardRank=rank.RequiredELOLeaderboardRanking and cfg.rank or nil}
+    end
+    local function recordSeasonCharm(model,season,elo,arch,hasNativeData)
+        local saved=seasonRecords[model]
+        if saved then return saved end
+        saved={season=season,elo=elo,arch=arch,native=hasNativeData,labels={}}
+        local extra=model:FindFirstChild("Extra")
+        saved.extra=extra and extra:Clone()
+        for _,object in ipairs(model:GetDescendants()) do
+            if object:HasTag("CharmLeaderboardRank") then
+                pcall(function() saved.labels[object]=object.Text end)
+            end
+        end
+        seasonRecords[model]=saved
+        return saved
+    end
+    local function restoreCharmRankGeometry(model,season,md)
+        if not seasonLib or type(seasonLib.GetRank)~="function" then return end
+        local profile=seasonLib.Seasons and seasonLib.Seasons[season]
+        if not profile or not profile.RankProfile then return end
+        local ok,rank=pcall(seasonLib.GetRank,seasonLib,md.SeasonELO,nil,md.SeasonLeaderboardRank or math.huge,profile.RankProfile.Name)
+        if not ok or type(rank)~="string" then return end
+        local extra=model:FindFirstChild("Extra")
+        if not extra or extra:FindFirstChild(rank) then return end
+        local scripts=LocalPlayer and LocalPlayer:FindFirstChild("PlayerScripts")
+        local assets=scripts and scripts:FindFirstChild("Assets")
+        local charms=assets and assets:FindFirstChild("Charms")
+        local template=charms and charms:FindFirstChild(model.Name)
+        local source=template and template:FindFirstChild("Extra")
+        local shape=source and source:FindFirstChild(rank)
+        if shape then shape:Clone().Parent=extra end
+    end
+    local function resolveFighterController()
+        if fighterController then return fighterController end
+        pcall(function()
+            local scripts=LocalPlayer:FindFirstChild("PlayerScripts")
+            local controllers=scripts and scripts:FindFirstChild("Controllers")
+            local module=controllers and controllers:FindFirstChild("FighterController")
+            if module then fighterController=require(module) end
+        end)
+        return fighterController
+    end
+    local function equippedViewmodelRoot()
+        local controller=resolveFighterController()
+        if not controller then return nil end
+        local fighter=controller.LocalFighter
+        if not fighter and type(controller.GetFighter)=="function" then
+            pcall(function() fighter=controller:GetFighter(LocalPlayer) end)
+        end
+        local item=fighter and fighter.EquippedItem
+        local vm=item and item.ViewModel
+        return vm and (vm.Model or vm._model) or nil
+    end
+    local function installSeasonHook()
+        local lib=resolveSeasonLibrary()
+        if not lib then return false end
+        if seasonReplacement and lib.FormatSeasonRankCharm==seasonReplacement then return true end
+        if type(lib.FormatSeasonRankCharm)~="function" then return false end
+        seasonOriginal=lib.FormatSeasonRankCharm
+        local original=seasonOriginal
+        local replacement=function(self,model,season,elo,arch,...)
+            local md=seasonMetadata(season)
+            if md and typeof(model)=="Instance" then
+                if not seasonRecords[model] then recordSeasonCharm(model,season,elo,arch,true) end
+                restoreCharmRankGeometry(model,season,md)
+                elo,arch=md.SeasonELO,md.SeasonLeaderboardRank
+            end
+            return original(self,model,season,elo,arch,...)
+        end
+        local ok=pcall(function() lib.FormatSeasonRankCharm=replacement end)
+        if ok and lib.FormatSeasonRankCharm==replacement then
+            seasonReplacement=replacement
+            return true
+        end
+        return false
+    end
+    local function restoreSeasonCharm(model,saved)
+        if typeof(model)=="Instance" and model.Parent then
+            if saved.extra then
+                local extra=model:FindFirstChild("Extra")
+                if extra then extra:Destroy() end
+                saved.extra.Parent=model
+                saved.extra=nil
+            end
+            for label,value in pairs(saved.labels or {}) do
+                if label.Parent then pcall(function()label.Text=value end) end
+            end
+            if saved.native and type(seasonOriginal)=="function" then
+                pcall(seasonOriginal,seasonLib,model,saved.season,saved.elo,saved.arch)
+            end
+        end
+        if saved.extra then saved.extra:Destroy() end
+    end
+    local function restoreSeasonCharms()
+        for model,saved in pairs(seasonRecords) do restoreSeasonCharm(model,saved) end
+        table.clear(seasonRecords)
+    end
+    local function refreshSeasonCharms()
+        if not installSeasonHook() then return end
+        if type(seasonOriginal)~="function" then return end
+        for model,saved in pairs(seasonRecords) do
+            if typeof(model)=="Instance" and model.Parent then
+                local md=seasonMetadata(saved.season)
+                if md then
+                    restoreCharmRankGeometry(model,saved.season,md)
+                    local ok,err=pcall(seasonOriginal,seasonLib,model,saved.season,md.SeasonELO,md.SeasonLeaderboardRank)
+                    if not ok then warn("[Gumball Charm] Format: "..tostring(err)) end
+                else
+                    restoreSeasonCharm(model,saved)
+                    seasonRecords[model]=nil
+                end
+            else
+                restoreSeasonCharm(model,saved)
+                seasonRecords[model]=nil
+            end
+        end
+        local roots={equippedViewmodelRoot(),workspace.CurrentCamera,LocalPlayer.Character}
+        local seen=setmetatable({}, {__mode="k"})
+        local function restyle(model)
+            if typeof(model)~="Instance" or not model:IsA("Model") or seen[model] then return end
+            seen[model]=true
+            local index=seasonNumber(model.Name)
+            if index==nil then return end
+            local md=seasonMetadata(index)
+            if not md then return end
+            local saved=seasonRecords[model]
+            local season=saved and saved.season or seasonNames[index]
+            if not saved then recordSeasonCharm(model,season,nil,nil,false) end
+            restoreCharmRankGeometry(model,season,md)
+            local ok,err=pcall(seasonOriginal,seasonLib,model,season,md.SeasonELO,md.SeasonLeaderboardRank)
+            if not ok then warn("[Gumball Charm] Format: "..tostring(err)) end
+        end
+        for _,root in ipairs(roots) do
+            if typeof(root)=="Instance" then
+                restyle(root)
+                for _,model in ipairs(root:GetDescendants()) do restyle(model) end
+            end
+        end
+    end
+    for i=0,3 do seasonCfg[i]={enabled=false,rankName="Nemesis",rank=1} end
+    local function setRankedCharm(index,rank,top,enabled)
+        if not seasonCfg[index] then return false,"Unknown season" end
+        local rankName=resolveRankName(index,rank)
+        if enabled and not rankName then return false,"Rank not available in Season "..index..": "..tostring(rank) end
+        for i=0,3 do seasonCfg[i].enabled=false end
+        restoreSeasonCharms()
+        if enabled then
+            seasonCfg[index]={enabled=true,rankName=rankName,rank=math.clamp(math.floor(tonumber(top) or 1),1,200)}
+            refreshSeasonCharms()
+        end
+        return true
+    end
+    tbl17._InitCharmSpoof=function(store)
+        local function apply()
+            local data=store and store.Data and store.Data.CharmSpoof
+            if not data or not data.Enabled then
+                for i=0,3 do seasonCfg[i].enabled=false end
+                restoreSeasonCharms()
+                return
+            end
+            local index=seasonNumber(data.Season) or 0
+            local ok,reason=setRankedCharm(index,data.Rank or "Nemesis",data.Placement,true)
+            if not ok then warn("[Gumball Charm] "..tostring(reason)) end
+        end
+        for _,field in ipairs({"Enabled","Season","Rank","Placement"}) do
+            local ok,signal=pcall(function()return store:GetPropertyChangedSignal({"CharmSpoof",field})end)
+            if ok and signal then signal:Connect(function()
+                local success,err=pcall(apply)
+                if not success then warn("[Gumball Charm] Update: "..tostring(err)) end
+            end) end
+        end
+        task.defer(function()
+            local ok,err=pcall(apply)
+            if not ok then warn("[Gumball Charm] Init: "..tostring(err)) end
+            while task.wait(1) do
+                local data=store and store.Data and store.Data.CharmSpoof
+                if data and data.Enabled then
+                    local success,why=pcall(refreshSeasonCharms)
+                    if not success then warn("[Gumball Charm] Refresh: "..tostring(why)) end
+                end
+            end
+        end)
+    end
+end)()
+
 do -- jj
 local function fn35()
 local v115 = tbl17.ji()
@@ -66369,6 +66759,7 @@ end })
 
 local boot = (function()
     local store = tbl17.bG()
+    if tbl17._InitCharmSpoof then tbl17._InitCharmSpoof(store) end
     local profiles = GlobalTrove:Add(tbl17.bN().new(store))
     store:UseMiddleware(profiles)
     local fonts = tbl17.az()
