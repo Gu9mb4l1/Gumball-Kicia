@@ -6,6 +6,7 @@ print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
 
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+local __gumballSource = [========[
 if getgenv().KiciaRebuild and getgenv().KiciaRebuild.Unload then
     pcall(getgenv().KiciaRebuild.Unload)
 end
@@ -17849,7 +17850,16 @@ return { Page = v120, Grid = v121 }
 end
 
 local function fn40(arg, arg2, arg3)
-arg:AddToggle({ Label = "Re-run After Teleport", Config = arg3 })
+arg:AddToggle({
+Label = "Re-run After Teleport",
+Config = arg3,
+OnChanged = function(enabled)
+    local handler = getgenv().__GumballTeleportToggle
+    if type(handler) == "function" then
+        handler(enabled == true)
+    end
+end,
+})
 local stateData = arg2:GetStateData()
 
 arg:AddToggle({
@@ -66818,3 +66828,42 @@ function K.Unload()
 end
 
 tbl17.j1()(boot)
+
+]========]
+local __gumballFlag = "kiciarebuild_teleport_enabled.txt"
+local __gumballEnv = getgenv()
+local __gumballQueue = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+local __gumballQueued = false
+local __gumballPayloadBuilder = [[
+local source = %s
+local flag = %s
+local q = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+local ok, enabled = pcall(function() return readfile(flag) end)
+if ok and enabled == "true" then
+    local template = %s
+    local payload = string.format(template, string.format("%%q", source), string.format("%%q", flag), string.format("%%q", template))
+    if type(q) == "function" then pcall(q, payload) end
+    loadstring(source)()
+end
+]]
+local __gumballReload = string.format(__gumballPayloadBuilder, string.format("%q", __gumballSource), string.format("%q", __gumballFlag), string.format("%q", __gumballPayloadBuilder))
+local function __gumballSetTeleport(enabled)
+    if type(writefile) == "function" then
+        pcall(writefile, __gumballFlag, enabled and "true" or "false")
+    end
+    if enabled and not __gumballQueued then
+        if type(__gumballQueue) ~= "function" then
+            warn("[Gumball Teleport] Executor does not support queue_on_teleport")
+            return
+        end
+        local ok, err = pcall(__gumballQueue, __gumballReload)
+        if ok then __gumballQueued = true else warn("[Gumball Teleport] " .. tostring(err)) end
+    end
+end
+__gumballEnv.__GumballTeleportToggle = __gumballSetTeleport
+local __gumballOK, __gumballErr = pcall(function() loadstring(__gumballSource)() end)
+if not __gumballOK then warn("[Gumball Teleport] Script error: " .. tostring(__gumballErr)) end
+if type(readfile) == "function" then
+    local ok, value = pcall(readfile, __gumballFlag)
+    if ok and value == "true" then __gumballSetTeleport(true) end
+end
