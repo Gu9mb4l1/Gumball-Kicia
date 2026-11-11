@@ -18,7 +18,7 @@ while not gumballLocalPlayer do
     gumballPlayers:GetPropertyChangedSignal("LocalPlayer"):Wait()
     gumballLocalPlayer = gumballPlayers.LocalPlayer
 end
-gumballAwait(gumballLocalPlayer, "PlayerGui")
+local gumballPlayerGui = gumballAwait(gumballLocalPlayer, "PlayerGui")
 local gumballScripts = gumballAwait(gumballLocalPlayer, "PlayerScripts")
 local gumballControllers = gumballAwait(gumballScripts, "Controllers")
 gumballAwait(gumballScripts, "Modules")
@@ -37,13 +37,23 @@ gumballAwait(gumballFighterRemotes, "UseItem")
 while not workspace.CurrentCamera do
     workspace:GetPropertyChangedSignal("CurrentCamera"):Wait()
 end
--- Allow the game's own controller LocalScripts their next scheduler step.
+-- DataModel.Loaded and replicated ModuleScript instances do not establish that
+-- the game's own client bootstrap is ready. MainGui is created as the game's
+-- client UI starts; wait for it and at least one of its GuiObjects before
+-- requiring FighterController. This is event-driven, with no fixed timeout.
+local gumballMainGui = gumballAwait(gumballPlayerGui, "MainGui")
+if gumballMainGui:IsA("LayerCollector") then
+    while not gumballMainGui:FindFirstChildWhichIsA("GuiObject", true) do
+        gumballMainGui.DescendantAdded:Wait()
+    end
+end
+-- Yield exactly one scheduler cycle to let deferred UI initialization finish.
 game:GetService("RunService").Heartbeat:Wait()
 
 if getgenv().KiciaRebuild and getgenv().KiciaRebuild.Unload then
     pcall(getgenv().KiciaRebuild.Unload)
 end
-local K = { connections = {}, cleanups = {}, destroyed = false }
+local K = { connections = {}, cleanups = {}, destroyed = false, session = tostring(game.PlaceId) .. ":" .. tostring(game.JobId or "") }
 getgenv().KiciaRebuild = K
 
 local Players = game:GetService("Players")
@@ -17911,6 +17921,9 @@ local session = currentPlace .. ":" .. currentJob
 if env.__ProjectGumballTeleportLaunchSession == session then
     return -- A duplicate queue must not start a second script.
 end
+if env.KiciaRebuild and not env.KiciaRebuild.destroyed and env.KiciaRebuild.session == session then
+    return -- Already running in the destination server.
+end
 env.__ProjectGumballTeleportLaunchSession = session
 
 -- The downloaded Kicia script handles client readiness itself.
@@ -17924,9 +17937,9 @@ local ok, err = pcall(function()
     chunk()
 end)
 if not ok then
-    -- Permit a later teleport attempt, while exposing the actual failure.
+    -- Genuine load failures remain visible once, without a second stack trace.
     env.__ProjectGumballTeleportLaunchSession = nil
-    error("[Gumball Teleport] Auto-run failed: " .. tostring(err), 0)
+    warn("[Gumball Teleport] Load failed: " .. tostring(err))
 end
 ]=]
 end
@@ -19986,7 +19999,7 @@ return bh.c
 end
 end
 do -- bi
-local function fn35() tbl17 .a3();return{Movement={WalkSpeed={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},JumpPower={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=false,Invisible=false}},Flight={Enabled=false,Speed=100,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Sliding={Enabled=false,Speed=10,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Noclip={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},AutoStrafe={Enabled=false,Speed=50,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},LongJump={Enabled=false,Keybind={State=false,Kind="Tap",Bind=nil,ShowInList=true,Invisible=false},Mode="Under Feet",Force=60,UpwardVelocity=20,Behind=8},MovementRecorder={Enabled=false,HideUI=false,HideNotifications=false,OpenDistance=3,RenderDistance=50,LookAlignSpeed=180,AlignSnapDistance=0.2,LookSmoothing=35,Record={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}},Replay={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}}}},Removables={NoFlashbang=false,NoBurnEffect=false,NoAdsVignette=false,NoScopeOverlay=false,NoScopeReticle=false,NoGunTracers=false,NoMuzzleFlash=false,NoHitmarker=false},ThirdPerson={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false},ShowReplica=false,RayCheck=false,X=3,Y=2,Z=6},CameraFov={Enabled=false,Value=70},StretchedResolution={Enabled=false,X=13,Y=10},CustomCrosshair={Enabled=false,Style="Lines",Image={Name="",Size=32,Transparency=0},Length=12,Thickness=2,Gap=6,Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}},Rotation={Enabled=false,Angle=0,Speed=90},Spread={Enabled=false,Range={Min=4,Max=16},Speed=3},Top={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Bottom={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Left={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Right={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Text={Enabled=false,Content="",Font="Inconsolata",Size=14,Offset=24,Color=ColorSequence.new(Color3.fromRGB(255,255,255)),Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}}},FollowTarget={Enabled=false,Mode="Crosshair",Speed=20,Damper=1,SnapDistance=5}},AnimationPlayer={Enabled=false,Animation="Cat Girl Bounce",CustomId="",Speed=1,Start=0,End=100},DeviceSpoof={Enabled=false,SpoofType="VR",Interval=1},ZTower={Enabled=false,FireRate=0.05,MaxDistance=500,LockEnabled=false,LockOffset=14.5,LockTolerance=0.1,JitterEnabled=false,JitterRadius=14,JitterInterval=0.3,NoclipEnabled=false,AutoCollectEnabled=true,CollectHP=true,CollectAmmo=true,CollectInterval=0.10,HideEnabled=false,HitTime=0.35,HideTime=0.35,HideDistance=500},CharmSpoof={Enabled=false,Season="Season 0",Rank="Nemesis",Placement=1},PlayerSpoofer={LocalPlayer={Name={Enabled=false,Value="Nosniy"},DisplayName={Enabled=false,Value="Nosniy"},Avatar={Enabled=false,Value="20349956"},Ping={Enabled=false,Value="Low"},Keys={Enabled=false,Value=999},EventCurrency={Enabled=false,Value=9999},Winstreak={Enabled=false,Value=999},Level={Enabled=false,Value=999},CasualWins={Enabled=false,Value=99999},RankedWins={Enabled=false,Value=9999},CasualWinPercent={Enabled=false,Value=100},RankedWinPercent={Enabled=false,Value=100},RankedElo={Enabled=false,Value=3600},LeaderboardRank={Enabled=false,Value=1},FavoriteMap={Enabled=false,Value="Arena"},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false,Value=true},RobloxEmployee={Enabled=false,Value=true},NosniyTeam={Enabled=false},VerifiedBadge={Enabled=false}},OtherPlayers={Name={Enabled=false,Value=""},DisplayName={Enabled=false,Value=""},Avatar={Enabled=false,Value=""},Winstreak={Enabled=false,Value=0},Level={Enabled=false,Value=0},CasualWins={Enabled=false,Value=0},RankedWins={Enabled=false,Value=0},CasualWinPercent={Enabled=false,Value=0},RankedWinPercent={Enabled=false,Value=0},RankedElo={Enabled=false,Value=0},LeaderboardRank={Enabled=false,Value=200},FavoriteMap={Enabled=false,Value=""},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false},RobloxEmployee={Enabled=false},NosniyTeam={Enabled=false},VerifiedBadge={Enabled=false}}}};end
+local function fn35() tbl17 .a3();return{Movement={WalkSpeed={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},JumpPower={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=false,Invisible=false}},Flight={Enabled=false,Speed=100,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Sliding={Enabled=false,Speed=10,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Noclip={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},AutoStrafe={Enabled=false,Speed=50,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},LongJump={Enabled=false,Keybind={State=false,Kind="Tap",Bind=nil,ShowInList=true,Invisible=false},Mode="Under Feet",Force=60,UpwardVelocity=20,Behind=8},MovementRecorder={Enabled=false,HideUI=false,HideNotifications=false,OpenDistance=3,RenderDistance=50,LookAlignSpeed=180,AlignSnapDistance=0.2,LookSmoothing=35,Record={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}},Replay={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}}}},Removables={NoFlashbang=false,NoBurnEffect=false,NoAdsVignette=false,NoScopeOverlay=false,NoScopeReticle=false,NoGunTracers=false,NoMuzzleFlash=false,NoHitmarker=false},ThirdPerson={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false},ShowReplica=false,RayCheck=false,X=3,Y=2,Z=6},CameraFov={Enabled=false,Value=70},StretchedResolution={Enabled=false,X=13,Y=10},CustomCrosshair={Enabled=false,Style="Lines",Image={Name="",Size=32,Transparency=0},Length=12,Thickness=2,Gap=6,Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}},Rotation={Enabled=false,Angle=0,Speed=90},Spread={Enabled=false,Range={Min=4,Max=16},Speed=3},Top={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Bottom={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Left={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Right={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Text={Enabled=false,Content="",Font="Inconsolata",Size=14,Offset=24,Color=ColorSequence.new(Color3.fromRGB(255,255,255)),Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}}},FollowTarget={Enabled=false,Mode="Crosshair",Speed=20,Damper=1,SnapDistance=5}},AnimationPlayer={Enabled=false,Animation="Cat Girl Bounce",CustomId="",Speed=1,Start=0,End=100},DeviceSpoof={Enabled=false,SpoofType="VR",Interval=1},CharmSpoof={Enabled=false,Season="Season 0",Rank="Nemesis",Placement=1},PlayerSpoofer={LocalPlayer={Name={Enabled=false,Value="Nosniy"},DisplayName={Enabled=false,Value="Nosniy"},Avatar={Enabled=false,Value="20349956"},Ping={Enabled=false,Value="Low"},Keys={Enabled=false,Value=999},EventCurrency={Enabled=false,Value=9999},Winstreak={Enabled=false,Value=999},Level={Enabled=false,Value=999},CasualWins={Enabled=false,Value=99999},RankedWins={Enabled=false,Value=9999},CasualWinPercent={Enabled=false,Value=100},RankedWinPercent={Enabled=false,Value=100},RankedElo={Enabled=false,Value=3600},LeaderboardRank={Enabled=false,Value=1},FavoriteMap={Enabled=false,Value="Arena"},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false,Value=true},RobloxEmployee={Enabled=false,Value=true},NosniyTeam={Enabled=false},VerifiedBadge={Enabled=false}},OtherPlayers={Name={Enabled=false,Value=""},DisplayName={Enabled=false,Value=""},Avatar={Enabled=false,Value=""},Winstreak={Enabled=false,Value=0},Level={Enabled=false,Value=0},CasualWins={Enabled=false,Value=0},RankedWins={Enabled=false,Value=0},CasualWinPercent={Enabled=false,Value=0},RankedWinPercent={Enabled=false,Value=0},RankedElo={Enabled=false,Value=0},LeaderboardRank={Enabled=false,Value=200},FavoriteMap={Enabled=false,Value=""},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false},RobloxEmployee={Enabled=false},NosniyTeam={Enabled=false},VerifiedBadge={Enabled=false}}}};end
 
 tbl17.bi = function()
 local bi = tbl17.cache.bi
@@ -59510,30 +59523,7 @@ return ii.c
 end
 end
 do -- ij
-local function fn35()local I,W,N,P= tbl17 .aU(), tbl17 .gR(), tbl17 .aW(), tbl17 .aY(); tbl17 .aE(); tbl17 .hN();local a,e,c,E,p,T,t,x,S= tbl17 .h0(), tbl17 .h7(), tbl17 .h8(), tbl17 .h9(), tbl17 .ia(), tbl17 .ib(), tbl17 .ic(), tbl17 .id(),{Combat="rbxassetid://99199363807265",CameraAim="rbxassetid://83752373575368",SilentAim="rbxassetid://109514269737059",FireAssist="rbxassetid://81854854241463",WeaponHandling="rbxassetid://128279962545721",HitFeedback="rbxassetid://140427675871522",Ragebot="rbxassetid://125012650497883"};return function(J,B)local X=B:AddTab({Label="Combat",Icon=S.Combat,Description="Aim assistance, fire control, weapon handling, feedback, and ragebot."});local H=X:AddTab({Label="Aimbot",Icon=S.CameraAim,Description="Camera-based aim assistance and target locking."});local k,D=H:Grid({Columns=2}),table.clone(I.BuildSpec);D.PinHint="Hold a weapon, then click the pin next to a setting to give that weapon its own value.";a(J.StoreProfiles,e(k,D));D,k=X:AddTab({Label="Silent Aim",Icon=S.SilentAim,Description="Redirect projectiles toward targets without moving the camera."}):Grid({Columns=2}),table.clone(N.BuildSpec);k.PinHint="Hold a weapon, then click the pin next to a setting to give that weapon its own value.";a(J.StoreProfiles,E(D,k));k=X:AddTab({Label="Ragebot",Icon=S.Ragebot,Description="Aggressive targeting, weapon priority, and evasive movement."}):Grid({Columns=2});if W.IsArcadeServer or false or false then  tbl17 .ie()(k);else  tbl17 .ih()(k);end;D,k=X:AddTab({Label="Fire Assist",Icon=S.FireAssist,Description="Automatic firing and fast camera flicks."}):Grid({Columns=2}),table.clone(P.BuildSpec);k.PinHint="Hold a weapon, then click the pin next to a setting to give that weapon its own value.";a(J.StoreProfiles,p(D,k)); tbl17 .ii()(D,function()H:Open();end);local z=X:AddTab({Label="Z-Tower",Icon=S.Ragebot,Description="Tower script controls."}):Grid({Columns=2});
-local zc=z:AddSection({Title="Combat",Side="left"});
-zc:AddToggle({Label="Enable Auto-Shoot",Config={"ZTower","Enabled"}});
-zc:AddSlider({Label="Fire Rate (seconds)",Min=0.01,Max=0.5,Step=0.01,Config={"ZTower","FireRate"}});
-zc:AddSlider({Label="Max Distance",Min=50,Max=2000,Step=1,Config={"ZTower","MaxDistance"}});
-zc:AddToggle({Label="Lock Above Target",Config={"ZTower","LockEnabled"}});
-zc:AddSlider({Label="Lock Height (studs above)",Min=1,Max=30,Step=0.1,Config={"ZTower","LockOffset"}});
-zc:AddSlider({Label="Lock Tolerance (studs)",Min=0.1,Max=10,Step=0.1,Config={"ZTower","LockTolerance"}});
-zc:AddToggle({Label="Random Jitter Teleport (Strafe)",Config={"ZTower","JitterEnabled"}});
-zc:AddSlider({Label="Jitter Radius (studs)",Min=0.1,Max=15,Step=0.1,Config={"ZTower","JitterRadius"}});
-zc:AddSlider({Label="Jitter Interval (seconds)",Min=0.05,Max=1,Step=0.01,Config={"ZTower","JitterInterval"}});
-local zh=z:AddSection({Title="Hide",Side="right"});
-zh:AddToggle({Label="Enable Hide (Hit Time / Hide Time)",Config={"ZTower","HideEnabled"}});
-zh:AddSlider({Label="Hit Time (seconds)",Min=0.01,Max=2,Step=0.01,Config={"ZTower","HitTime"}});
-zh:AddSlider({Label="Hide Time (seconds)",Min=0.01,Max=2,Step=0.01,Config={"ZTower","HideTime"}});
-zh:AddSlider({Label="Hide Distance (studs)",Min=20,Max=500,Step=1,Config={"ZTower","HideDistance"}});
-local zi=z:AddSection({Title="Items",Side="left"});
-zi:AddToggle({Label="Enable Auto Collect",Config={"ZTower","AutoCollectEnabled"}});
-zi:AddToggle({Label="Collect Health Packs",Config={"ZTower","CollectHP"}});
-zi:AddToggle({Label="Collect Ammo Packs",Config={"ZTower","CollectAmmo"}});
-zi:AddSlider({Label="Collect Interval (seconds)",Min=0.05,Max=1,Step=0.01,Config={"ZTower","CollectInterval"}});
-local zm=z:AddSection({Title="Misc",Side="right"});
-zm:AddToggle({Label="Noclip",Config={"ZTower","NoclipEnabled"}});
-x((X:AddTab({Label="Weapon Handling",Icon=S.WeaponHandling,Description="Aim, firing, cooldown, melee, and grenade behavior."}):Grid({Columns=2})));D,k=X:AddTab({Label="Hit Feedback",Icon=S.HitFeedback,Description="Sound, visual, flash, and notification feedback."}):Grid({Columns=2}),c(B,J.SfxSoundStorage);t(J,D,k);T(J,D,k);end;end
+local function fn35()local I,W,N,P= tbl17 .aU(), tbl17 .gR(), tbl17 .aW(), tbl17 .aY(); tbl17 .aE(); tbl17 .hN();local a,e,c,E,p,T,t,x,S= tbl17 .h0(), tbl17 .h7(), tbl17 .h8(), tbl17 .h9(), tbl17 .ia(), tbl17 .ib(), tbl17 .ic(), tbl17 .id(),{Combat="rbxassetid://99199363807265",CameraAim="rbxassetid://83752373575368",SilentAim="rbxassetid://109514269737059",FireAssist="rbxassetid://81854854241463",WeaponHandling="rbxassetid://128279962545721",HitFeedback="rbxassetid://140427675871522",Ragebot="rbxassetid://125012650497883"};return function(J,B)local X=B:AddTab({Label="Combat",Icon=S.Combat,Description="Aim assistance, fire control, weapon handling, feedback, and ragebot."});local H=X:AddTab({Label="Aimbot",Icon=S.CameraAim,Description="Camera-based aim assistance and target locking."});local k,D=H:Grid({Columns=2}),table.clone(I.BuildSpec);D.PinHint="Hold a weapon, then click the pin next to a setting to give that weapon its own value.";a(J.StoreProfiles,e(k,D));D,k=X:AddTab({Label="Silent Aim",Icon=S.SilentAim,Description="Redirect projectiles toward targets without moving the camera."}):Grid({Columns=2}),table.clone(N.BuildSpec);k.PinHint="Hold a weapon, then click the pin next to a setting to give that weapon its own value.";a(J.StoreProfiles,E(D,k));k=X:AddTab({Label="Ragebot",Icon=S.Ragebot,Description="Aggressive targeting, weapon priority, and evasive movement."}):Grid({Columns=2});if W.IsArcadeServer or false or false then  tbl17 .ie()(k);else  tbl17 .ih()(k);end;D,k=X:AddTab({Label="Fire Assist",Icon=S.FireAssist,Description="Automatic firing and fast camera flicks."}):Grid({Columns=2}),table.clone(P.BuildSpec);k.PinHint="Hold a weapon, then click the pin next to a setting to give that weapon its own value.";a(J.StoreProfiles,p(D,k)); tbl17 .ii()(D,function()H:Open();end);x((X:AddTab({Label="Weapon Handling",Icon=S.WeaponHandling,Description="Aim, firing, cooldown, melee, and grenade behavior."}):Grid({Columns=2})));D,k=X:AddTab({Label="Hit Feedback",Icon=S.HitFeedback,Description="Sound, visual, flash, and notification feedback."}):Grid({Columns=2}),c(B,J.SfxSoundStorage);t(J,D,k);T(J,D,k);end;end
 
 tbl17.ij = function()
 local ij = tbl17.cache.ij
@@ -60891,6 +60881,8 @@ end
 local glassOriginal = {}
 local glassActive = false
 local glassConnection
+local glassScanGeneration = 0
+local glassScanFinished = false
 local glassWorkspace = game:GetService("Workspace")
 local glassPlayers = game:GetService("Players")
 local function isGlassWorldPart(part)
@@ -60947,6 +60939,41 @@ local function applyGlassPart(part)
         part.Reflectance=glassReflectionStrength
     end)
 end
+-- Initial effect application runs in small slices so streaming a large map or
+-- loading a config does not synchronously change thousands of world objects.
+-- The generation stops old scans when the toggle or slider changes.
+local function scheduleGlassScan()
+    glassScanGeneration += 1
+    glassScanFinished = false
+    local generation = glassScanGeneration
+    task.spawn(function()
+        local descendants = glassWorkspace:GetDescendants()
+        for index, part in ipairs(descendants) do
+            if not glassActive or glassReflectionStrength <= 0 or K.destroyed
+                or generation ~= glassScanGeneration then return end
+            if part:IsA("BasePart") then applyGlassPart(part) end
+            if index % 100 == 0 then task.wait() end
+        end
+        if generation == glassScanGeneration then glassScanFinished = true end
+    end)
+end
+local function scheduleTrackedGlassUpdate()
+    glassScanGeneration += 1
+    local generation = glassScanGeneration
+    task.spawn(function()
+        local processed = 0
+        for part in pairs(glassOriginal) do
+            if K.destroyed or not glassActive or generation ~= glassScanGeneration then return end
+            if part and part.Parent then
+                pcall(function() part.Reflectance = glassReflectionStrength end)
+            else
+                glassOriginal[part] = nil
+            end
+            processed += 1
+            if processed % 100 == 0 then task.wait() end
+        end
+    end)
+end
 -- Setting a saved strength must have exactly the same effect as dragging the slider.
 -- Do not require a separate "slider touched" flag; that prevented config loads
 -- and ON-to-ON config switches from actually updating the world.
@@ -60954,15 +60981,24 @@ local function updateGlassReflection(value)
     if type(value) ~= "number" then return end
     local nextStrength = math.clamp(value, 0, 1)
     if math.abs(glassReflectionStrength - nextStrength) < 0.0001 then return end
+    local previousStrength = glassReflectionStrength
     glassReflectionStrength = nextStrength
     if not glassActive then return end
     if nextStrength <= 0 then
+        glassScanGeneration += 1
+        glassScanFinished = false
         restoreGlass()
+    elseif previousStrength <= 0 then
+        -- An earlier zero reset removed all known parts: scan once, in slices.
+        scheduleGlassScan()
+    elseif not glassScanFinished then
+        -- Restart an in-progress scan at the newest strength; otherwise a
+        -- slider drag could cancel the first scan before covering the map.
+        scheduleGlassScan()
     else
-        -- Reapply to existing parts, including parts restored by an earlier 0.
-        for _,part in ipairs(glassWorkspace:GetDescendants()) do
-            applyGlassPart(part)
-        end
+        -- A reflection slider change only needs the material parts already
+        -- tracked. Newly streamed map parts are handled by DescendantAdded.
+        scheduleTrackedGlassUpdate()
     end
 end
 local function setGlassEnabled(enabled)
@@ -60972,6 +61008,8 @@ local function setGlassEnabled(enabled)
         return
     end
     glassActive = enabled
+    glassScanGeneration += 1
+    glassScanFinished = false
     if glassConnection then glassConnection:Disconnect(); glassConnection = nil end
     if not enabled then
         restoreGlass()
@@ -60979,15 +61017,16 @@ local function setGlassEnabled(enabled)
     end
     -- The toggle alone does nothing at zero, but applies a nonzero saved value.
     if glassReflectionStrength > 0 then
-        for _,part in ipairs(glassWorkspace:GetDescendants()) do
-            applyGlassPart(part)
-        end
+        scheduleGlassScan()
     else
         restoreGlass()
     end
     glassConnection = glassWorkspace.DescendantAdded:Connect(function(part)
-        if glassActive and glassReflectionStrength > 0 then
-            task.defer(function() applyGlassPart(part) end)
+        -- Streaming often adds many non-parts; never schedule a task for those.
+        if glassActive and glassReflectionStrength > 0 and part:IsA("BasePart") then
+            task.defer(function()
+                if not K.destroyed then applyGlassPart(part) end
+            end)
         end
     end)
 end
@@ -61036,17 +61075,11 @@ end)
 glassReflectionStrength = readGlassReflection()
 syncGlassState()
 
--- Periodic reconciliation also catches config replacements that do not emit
--- individual property change signals. It is a no-op when values match.
-task.spawn(function()
-    while not K.destroyed and glassToggle and glassToggle.Row and glassToggle.Row.Parent do
-        task.wait(0.25)
-        syncGlassState()
-    end
-end)
 -- Re-injecting must restore the map rather than leaving old glossy parts.
 K.onUnload(function()
     glassActive = false
+    glassScanGeneration += 1
+    glassScanFinished = false
     if glassConnection then glassConnection:Disconnect(); glassConnection = nil end
     restoreGlass()
 end)
@@ -67543,372 +67576,6 @@ tbl17.b().use({ Report = function(_, e)
 end })
 
 
--- Zombie Tower module: uses the original Tower script's Fighter.UseItem packet format.
--- Scoped to Workspace["Zombie Tower"].Entities; never targets Roblox player characters.
-do
-    local runtimeEnv = (type(getgenv)=="function" and getgenv()) or _G
-    runtimeEnv.GumballZTowerGeneration = (runtimeEnv.GumballZTowerGeneration or 0) + 1
-    local myGeneration = runtimeEnv.GumballZTowerGeneration
-    local function isCurrent() return runtimeEnv.GumballZTowerGeneration == myGeneration end
-    local towerConfig
-    local function currentConfig()
-        local data=towerConfig and towerConfig.Data
-        return data and data.ZTower
-    end
-    local ReplicatedStorage=game:GetService("ReplicatedStorage")
-    local Players=game:GetService("Players")
-    local RunService=game:GetService("RunService")
-    local Workspace=game:GetService("Workspace")
-    local lplr=Players.LocalPlayer
-    local util,enum,FighterController
-    local lastDependencyAttempt = -math.huge
-    local function loadDependencies()
-        if util and enum and FighterController then return true end
-        local now = os.clock()
-        if now - lastDependencyAttempt < 1 then return false end
-        lastDependencyAttempt = now
-        local ok,err=pcall(function()
-            util=require(ReplicatedStorage.Modules.Utility)
-            enum=require(ReplicatedStorage.Modules.EnumLibrary)
-            local playerScripts = lplr and lplr:FindFirstChild("PlayerScripts")
-            local controllers = playerScripts and playerScripts:FindFirstChild("Controllers")
-            local fighterModule = controllers and controllers:FindFirstChild("FighterController")
-            if not fighterModule then return end
-            FighterController=require(fighterModule)
-        end)
-        if not ok then warn("[Gumball Z-Tower] "..tostring(err)) end
-        return ok and util ~= nil and enum ~= nil and FighterController ~= nil
-    end
-local function round1(v) return math.round(v * 10) / 10 end
-local function round2(v) return math.round(v * 100) / 100 end
-
-local lastFire = 0
-local lastJitter = 0
-local lastCollect = 0
-local lockedTargetRoot = nil
-local currentJitterOffset = Vector3.zero
-
-local hidePhase = "hit"
-local phaseStart = tick()
-local savedReturnCF = nil
-local hiddenToCF = nil
-
--- Keep an event-driven model index instead of walking every Workspace part on
--- every Heartbeat. It is created only if Z-Tower is enabled. Models with parts
--- added later remain in the index and become targetable as soon as complete.
-local npcModelCache = {}
-local npcCacheRoot = nil
-local npcCacheConnections = {}
-local function ensureNpcModelCache()
-    local tower = Workspace:FindFirstChild("Zombie Tower")
-    local entities = tower and tower:FindFirstChild("Entities")
-    if npcCacheRoot == entities then return end
-    -- The tower folder may be rebuilt for a new round. Always drop the old
-    -- index and connections before connecting to the new round's entities.
-    for _, connection in ipairs(npcCacheConnections) do connection:Disconnect() end
-    table.clear(npcCacheConnections)
-    table.clear(npcModelCache)
-    npcCacheRoot = entities
-    if not entities then return end
-    for _, descendant in ipairs(entities:GetDescendants()) do
-        if descendant:IsA("Model") then npcModelCache[descendant] = true end
-    end
-    npcCacheConnections[#npcCacheConnections + 1] = entities.DescendantAdded:Connect(function(descendant)
-        if descendant:IsA("Model") then npcModelCache[descendant] = true end
-    end)
-    npcCacheConnections[#npcCacheConnections + 1] = entities.DescendantRemoving:Connect(function(descendant)
-        if descendant:IsA("Model") then npcModelCache[descendant] = nil end
-    end)
-end
-K.onUnload(function()
-    for _, connection in ipairs(npcCacheConnections) do pcall(function() connection:Disconnect() end) end
-    table.clear(npcCacheConnections)
-    table.clear(npcModelCache)
-    npcCacheRoot = nil
-end)
-
-local function getClosestTarget()
-    local char = lplr.Character
-    local myRoot = char and char:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil, nil, nil end
-    ensureNpcModelCache()
-
-    local closestModel, closestRoot, closestHead = nil, nil, nil
-    local maxDistance = tonumber(currentConfig().MaxDistance) or 150
-    local closestDistanceSq = maxDistance * maxDistance
-    local myPosition = myRoot.Position
-
-    for obj in pairs(npcModelCache) do
-        if obj ~= char and obj:IsDescendantOf(Workspace) then
-            local pRoot = obj:FindFirstChild("HumanoidRootPart")
-            local pHead = obj:FindFirstChild("Head")
-            local pHum = obj:FindFirstChildWhichIsA("Humanoid")
-
-            if pRoot and pHead and pHum and pHum.Health > 0 then
-                local delta = myPosition - pRoot.Position
-                local distanceSq = delta:Dot(delta)
-                if distanceSq < closestDistanceSq and not Players:GetPlayerFromCharacter(obj) then
-                    closestDistanceSq = distanceSq
-                    closestModel = obj
-                    closestRoot = pRoot
-                    closestHead = pHead
-                end
-            end
-        end
-    end
-    return closestModel, closestRoot, closestHead
-end
-
-local function applyNoclip(state)
-    local char = lplr.Character
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if state then
-                part.CanCollide = false
-            else
-                if part.Name ~= "HumanoidRootPart" then
-                    part.CanCollide = true
-                end
-            end
-        end
-    end
-end
-
-
-local function lockAbove(targetRoot)
-    local char = lplr.Character
-    if not char then return end
-    local myRoot = char:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return end
-    if not targetRoot or not targetRoot.Parent then return end
-
-    local offset = currentConfig().LockOffset or 10
-    local idealPos = targetRoot.Position + Vector3.new(0, offset, 0)
-
-    if currentConfig().JitterEnabled then
-        idealPos = idealPos + currentJitterOffset
-    end
-
-    local targetChanged = (lockedTargetRoot ~= targetRoot)
-    lockedTargetRoot = targetRoot
-
-    local tolerance = currentConfig().LockTolerance or 2
-    local drift = (myRoot.Position - idealPos).Magnitude
-    if not targetChanged and drift < tolerance then
-        return
-    end
-
-    myRoot.CFrame = CFrame.new(idealPos) * (myRoot.CFrame - myRoot.CFrame.Position)
-end
-
-local function releaseLock()
-    lockedTargetRoot = nil
-    currentJitterOffset = Vector3.zero
-end
-
-local function updateJitter(targetRoot)
-    if not currentConfig().JitterEnabled then
-        currentJitterOffset = Vector3.zero
-        return
-    end
-    local now = tick()
-    if now - lastJitter < (currentConfig().JitterInterval or 0.15) then return end
-    lastJitter = now
-
-    local r = currentConfig().JitterRadius or 4
-    local amount = (math.random() * 2 - 1) * r
-    if targetRoot then
-        currentJitterOffset = targetRoot.CFrame.RightVector * amount
-    else
-        currentJitterOffset = Vector3.new(amount, 0, 0)
-    end
-end
-
-local function doCollect()
-    if not currentConfig().AutoCollectEnabled then return end
-    local now = tick()
-    if now - lastCollect < (currentConfig().CollectInterval or 0.10) then return end
-    lastCollect = now
-
-    local char = lplr.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    local hum  = char and char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum or hum.Health <= 0 then return end
-
-    local wantHP   = currentConfig().CollectHP and hum.Health < hum.MaxHealth
-    local wantAmmo = currentConfig().CollectAmmo
-    if not wantHP and not wantAmmo then return end
-
-    local firetouch = firetouchinterest
-    if not firetouch then return end
-
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj.Name == "_drop" and obj:IsA("BasePart") then
-            local isHP   = obj:FindFirstChild("Health") ~= nil
-            local isAmmo = obj:FindFirstChild("Ammo") ~= nil
-                        or obj:FindFirstChild("AmmoBalanced") ~= nil
-            if (wantHP and isHP) or (wantAmmo and isAmmo) then
-                pcall(function()
-                    firetouch(hrp, obj, 0)
-                    firetouch(hrp, obj, 1)
-                end)
-            end
-        end
-    end
-end
-
-local function pickHideCFrame(fromCF)
-    local sign = (math.random() < 0.5) and -1 or 1
-    local dir = Vector3.new(sign, 0, 0)
-    local dest = fromCF.Position + dir * (currentConfig().HideDistance or 100)
-    return CFrame.new(dest) * (fromCF - fromCF.Position)
-end
-
-local lastNoclipSweep = -math.huge
-K.track(RunService.Heartbeat:Connect(function()
-    if K.destroyed or not isCurrent() then return end
-    local cfg = currentConfig()
-    if not cfg or not cfg.Enabled then return end
-    if not loadDependencies() then return end
-
-    -- Noclip is persistent; checking all character descendants each frame
-    -- adds unnecessary load. Refresh eight times/second for newly added parts.
-    if cfg.NoclipEnabled then
-        local now = os.clock()
-        if now - lastNoclipSweep >= 0.125 then
-            lastNoclipSweep = now
-            applyNoclip(true)
-        end
-    end
-
-    doCollect()
-
-    local char = lplr.Character
-    local myRoot = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not char or not myRoot or not hum or hum.Health <= 0 then
-        if lockedTargetRoot then releaseLock() end
-        hidePhase = "hit"
-        savedReturnCF = nil
-        hiddenToCF = nil
-        return
-    end
-
-    if currentConfig().HideEnabled and hidePhase == "hide" then
-        local now = tick()
-        if hiddenToCF and (myRoot.Position - hiddenToCF.Position).Magnitude > 1 then
-            myRoot.CFrame = hiddenToCF
-        end
-        if now - phaseStart >= (currentConfig().HideTime or 0.5) then
-            if savedReturnCF then
-                myRoot.CFrame = savedReturnCF
-            end
-            savedReturnCF = nil
-            hiddenToCF = nil
-            hidePhase = "hit"
-            phaseStart = now
-        end
-        return
-    end
-
-    local targetModel, targetRoot, targetHead = getClosestTarget()
-
-    if currentConfig().HideEnabled then
-        if not targetModel or not targetRoot then
-            hidePhase = "hit"
-            phaseStart = tick()
-            if lockedTargetRoot then releaseLock() end
-            return
-        end
-
-        local now = tick()
-        if hidePhase == "hit" then
-            if now - phaseStart >= (currentConfig().HitTime or 1.0) then
-                savedReturnCF = myRoot.CFrame
-                hiddenToCF = pickHideCFrame(savedReturnCF)
-                myRoot.CFrame = hiddenToCF
-                hidePhase = "hide"
-                phaseStart = now
-                return
-            end
-        end
-    else
-        if hidePhase == "hide" then
-            if savedReturnCF then
-                myRoot.CFrame = savedReturnCF
-            end
-            savedReturnCF = nil
-            hiddenToCF = nil
-            hidePhase = "hit"
-            phaseStart = tick()
-        end
-    end
-
-    if not targetModel or not targetHead or not targetRoot then
-        if lockedTargetRoot then releaseLock() end
-        return
-    end
-
-    local localFighter = FighterController.LocalFighter
-    if not localFighter or not localFighter.EquippedItem then return end
-
-    if currentConfig().LockEnabled and currentConfig().JitterEnabled then
-        updateJitter(targetRoot)
-    end
-
-    if currentConfig().LockEnabled then
-        pcall(lockAbove, targetRoot)
-    elseif lockedTargetRoot then
-        releaseLock()
-    end
-
-    if tick() - lastFire < currentConfig().FireRate then return end
-    lastFire = tick()
-
-    local originPos = targetHead.Position + Vector3.new(0, 1, 0)
-    local targetPos = targetHead.Position
-    local aimCF = CFrame.lookAt(originPos, targetPos)
-    local targetCF = targetHead.CFrame
-
-    local randomOffset = Vector3.new(
-        (math.random() - 0.5) * 0.02,
-        (math.random() - 0.5) * 0.02,
-        (math.random() - 0.5) * 0.02
-    )
-    local aimedPos = targetPos + randomOffset
-    local objSpaceHeadOffset = targetHead.CFrame:ToObjectSpace(CFrame.new(aimedPos))
-
-    local cameradata = {}
-    cameradata[utf8.char(1)] = {
-        [utf8.char(0)] = util:EncodeCFrame(aimCF),
-        [utf8.char(1)] = util:EncodeCFrame(targetCF),
-        [utf8.char(2)] = targetHead,
-        [utf8.char(3)] = util:EncodeCFrame(objSpaceHeadOffset)
-    }
-
-    if not isCurrent() or not currentConfig().Enabled then return end
-    pcall(function()
-        ReplicatedStorage.Remotes.Replication.Fighter.UseItem:FireServer(
-            localFighter.EquippedItem:Get("ObjectID"),
-            enum:ToEnum("StartShooting"),
-            cameradata,
-            nil
-        )
-    end)
-end))
-
-    K.track(lplr.CharacterAdded:Connect(function(char)
-        char:WaitForChild("HumanoidRootPart",5)
-        hidePhase="hit";phaseStart=tick();savedReturnCF=nil;hiddenToCF=nil
-        if currentConfig() and currentConfig().NoclipEnabled then applyNoclip(true) end
-    end))
-    K.onUnload(function()
-        if isCurrent() then runtimeEnv.GumballZTowerGeneration=myGeneration+1 end
-    end)
-    tbl17._InitZTower=function(store) towerConfig=store end
-end
-
 --========================================================================
 -- Project Gumball / Ragebot: Fake Position (local character movement)
 -- Uses a post-camera surface offset and a temporary shot handoff.
@@ -68359,7 +68026,7 @@ do
             fpState.surfaceCF = root.CFrame
         end
         local surface = fpState.surfaceCF or root.CFrame
-        local depth = fpLimitDepth(surface.Position, cfg)
+        local depth
         local camera = fpWorkspace.CurrentCamera
         local look = camera and camera.CFrame.LookVector or root.CFrame.LookVector
         local yaw = math.atan2(-look.X,-look.Z)
@@ -68518,7 +68185,6 @@ end
 local boot = (function()
     local store = tbl17.bG()
     if tbl17._InitCharmSpoof then tbl17._InitCharmSpoof(store) end
-    if tbl17._InitZTower then tbl17._InitZTower(store) end
     local profiles = GlobalTrove:Add(tbl17.bN().new(store))
     store:UseMiddleware(profiles)
     local fonts = tbl17.az()
