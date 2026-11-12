@@ -1,10 +1,7 @@
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print("       PROJECT GUMBALL")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
-
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 -- Project Gumball Kicia: errors-only Discord diagnostics.
 -- PRIVATE BUILD: both webhook destinations are preconfigured; no setup needed.
