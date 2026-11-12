@@ -1,14 +1,11 @@
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print("       PROJECT GUMBALL")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
-
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
--- Project Gumball Kicia: errors-only Discord diagnostics.
+-- Project Gumball Kicia: error diagnostics and private script-load telemetry.
 -- PRIVATE BUILD: both webhook destinations are preconfigured; no setup needed.
--- User identity reporting additionally requires GumballUserReportConsent = true.
+-- Private distribution notice: script loads send Roblox username, display name, User ID and UTC time to admins. Inform all recipients.
 -- Do not publish or redistribute this script: it contains private webhook URLs.
 do
     local env = (type(getgenv) == "function" and getgenv()) or _G
@@ -52,8 +49,8 @@ do
         local recent, pending = {}, 0
         local userInFlight = {}
         local errorInFlight = {}
-        -- Consent is saved locally only after each player explicitly opts in.
-        -- The reporter never sends identity data without an affirmative choice.
+        -- Admin-only distribution: announce account-identifying telemetry before sharing.
+        -- Previously saved opt-outs remain respected; users can disable reporting.
         local consentPath = "ProjectGumball_UserReport_Consent.txt"
         local function storeUserConsent(choice)
             if type(writefile) == "function" then
@@ -73,7 +70,11 @@ do
             end
         end
         restoreUserConsent()
-        if env.GumballUserReportConsent == true then storeUserConsent(true) end
+        -- No in-game consent pop-up: default to reporting for this disclosed,
+        -- admin-only build, except where this user has already opted out.
+        if env.GumballUserReportConsent == nil then
+            env.GumballUserReportConsent = true
+        end
         local function redact(value)
             local s = tostring(value or "")
             s = s:gsub("https://[^%s]*discord%.com/api/webhooks/[^%s]+", "[REDACTED WEBHOOK]")
@@ -140,9 +141,8 @@ do
                 end
             end)
         end
-        -- Separate opt-in launch analytics. This does NOT collect login credentials.
-        -- Every player must be informed and explicitly agree before enabling
-        -- GumballUserReportConsent in their own executor session.
+        -- Script-load telemetry for informed users of this private admin build.
+        -- No passwords, session cookies, IP addresses or login tokens collected.
         local function sendUserLoaded(isTest, attempt)
             attempt = attempt or 1
             if not validUser then
@@ -150,7 +150,7 @@ do
                 return false
             end
             if env.GumballUserReportConsent ~= true then
-                if isTest then status("User report test: consent is disabled. Use GumballEnableUserReports() to opt in.") end
+                if isTest then status("User report test: user reporting has been disabled for this account.") end
                 return false
             end
             local player = game:GetService("Players").LocalPlayer
@@ -230,7 +230,6 @@ do
             return sendUserLoaded(true)
         end
         env.GumballEnableUserReports = function()
-            -- Call only after a player has explicitly agreed to user reporting.
             env.GumballUserReportConsent = true
             storeUserConsent(true)
             if env.GumballKiciaFinishedLoading then
@@ -251,82 +250,6 @@ do
                 Loaded = env.GumballKiciaFinishedLoading == true,
                 Delivered = env.GumballUserReportKey ~= nil,
             }
-        end
-        env.GumballPromptUserReportConsent = function()
-            if env.GumballUserReportConsent ~= nil then return end
-            local p = game:GetService("Players").LocalPlayer
-            if not p then return end
-            local pg = p:FindFirstChildOfClass("PlayerGui")
-            if not pg then return end
-            local oldPrompt = pg:FindFirstChild("ProjectGumballUserReportConsent")
-            if oldPrompt then oldPrompt:Destroy() end
-
-            local gui = Instance.new("ScreenGui")
-            gui.Name = "ProjectGumballUserReportConsent"
-            gui.ResetOnSpawn = false
-            gui.DisplayOrder = 500
-            gui.IgnoreGuiInset = true
-            gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-            local box = Instance.new("Frame")
-            box.Size = UDim2.fromOffset(390, 198)
-            box.Position = UDim2.fromScale(0.5, 0.5)
-            box.AnchorPoint = Vector2.new(0.5, 0.5)
-            box.BackgroundColor3 = Color3.fromRGB(22, 25, 31)
-            box.BorderSizePixel = 0
-            box.Parent = gui
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(0, 10)
-            corner.Parent = box
-            local stroke = Instance.new("UIStroke")
-            stroke.Color = Color3.fromRGB(71, 78, 89)
-            stroke.Thickness = 1
-            stroke.Parent = box
-
-            local function label(text, pos, size, textSize, strong)
-                local lbl = Instance.new("TextLabel")
-                lbl.BackgroundTransparency = 1
-                lbl.Text = text
-                lbl.TextSize = textSize
-                lbl.Font = strong and Enum.Font.GothamBold or Enum.Font.Gotham
-                lbl.TextColor3 = Color3.fromRGB(245, 247, 250)
-                lbl.TextXAlignment = Enum.TextXAlignment.Left
-                lbl.TextYAlignment = Enum.TextYAlignment.Top
-                lbl.TextWrapped = true
-                lbl.Position = pos
-                lbl.Size = size
-                lbl.Parent = box
-                return lbl
-            end
-            label("Project Gumball — User Reports", UDim2.fromOffset(18, 15),
-                UDim2.new(1, -36, 0, 28), 16, true)
-            label("Allow Project Gumball to send your Roblox username, display name, User ID and script-load time to its admins' Discord channel? No passwords or login tokens are collected.",
-                UDim2.fromOffset(18, 50), UDim2.new(1, -36, 0, 91), 12, false)
-            local function button(text, x, color)
-                local b = Instance.new("TextButton")
-                b.Text = text
-                b.Font = Enum.Font.GothamBold
-                b.TextSize = 13
-                b.TextColor3 = Color3.new(1, 1, 1)
-                b.BackgroundColor3 = color
-                b.BorderSizePixel = 0
-                b.Position = UDim2.new(x, 0, 1, -53)
-                b.Size = UDim2.new(0.44, 0, 0, 36)
-                b.Parent = box
-                local c = Instance.new("UICorner")
-                c.CornerRadius = UDim.new(0, 6)
-                c.Parent = b
-                return b
-            end
-            button("No thanks", 0.04, Color3.fromRGB(76, 80, 91)).MouseButton1Click:Connect(function()
-                env.GumballDisableUserReports()
-                gui:Destroy()
-            end)
-            button("Allow reports", 0.52, Color3.fromRGB(43, 110, 83)).MouseButton1Click:Connect(function()
-                gui:Destroy()
-                env.GumballEnableUserReports()
-            end)
-            gui.Parent = pg
         end
         env.GumballReportError = function(message, location)
             sendError(message, location or "Kicia", false)
@@ -36574,7 +36497,19 @@ local function fn36(arg, arg2)
 local v116 = v115(v115(getmetatable(arg), "__index"), arg2)
 
 return function()
-coroutine.wrap(v116)(arg)
+-- The game's Lobby.Buttons refresh can run while its Fame data is absent.
+-- Keep the other equipment / viewmodel refreshers running in that case.
+if arg2 == "_UpdateButtonInformation" then
+    local ok, err = pcall(v116, arg)
+    if not ok then
+        if tostring(err):find("attempt to index nil with 'Fame'", 1, true) then
+            return -- Let the game populate Fame before its next UI refresh.
+        end
+        error(err, 0) -- Preserve unexpected errors for the error reporter.
+    end
+else
+    coroutine.wrap(v116)(arg)
+end
 end
 end
 
@@ -38969,7 +38904,62 @@ end
 end
 end
 
-local function fn38(arg, arg2, arg3, arg4, arg5, arg6, arg7)
+-- Freeze-style finishers should preserve the victim's current pose rather
+-- than the neutral pose from the prebuilt finisher clone.
+local function isPoseFreezeFinisher(name)
+    if type(name) ~= "string" then return false end
+    local n = name:lower()
+    return n:find("diamond hands", 1, true) ~= nil
+        or n:find("diamondhands", 1, true) ~= nil
+        or n:find("freeze", 1, true) ~= nil
+        or n:find("frozen", 1, true) ~= nil
+        or n:find("statue", 1, true) ~= nil
+        or n:find("petrif", 1, true) ~= nil
+end
+
+local function preserveDeathPose(clone, source)
+    if not clone or not source then return end
+    -- Match descendants by their full relative path so accessory handles
+    -- do not get confused with similarly named body parts.
+    for _, dst in ipairs(clone:GetDescendants()) do
+        if dst:IsA("BasePart") or dst:IsA("Motor6D") then
+            local names = {}
+            local node = dst
+            while node and node ~= clone do
+                table.insert(names, 1, node.Name)
+                node = node.Parent
+            end
+            if node == clone then
+                local original = source
+                for _, name in ipairs(names) do
+                    original = original and original:FindFirstChild(name)
+                end
+                if original and original.ClassName == dst.ClassName then
+                    pcall(function()
+                        if dst:IsA("Motor6D") then
+                            dst.C0 = original.C0
+                            dst.C1 = original.C1
+                            dst.Transform = original.Transform
+                        else
+                            dst.CFrame = original.CFrame
+                        end
+                    end)
+                end
+            end
+        end
+    end
+    -- Anchoring the freeze-only duplicate holds the exact hit pose rather
+    -- than allowing gravity / a dead humanoid to straighten its limbs.
+    for _, part in ipairs(clone:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.AssemblyLinearVelocity = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+            part.Anchored = true
+        end
+    end
+end
+
+local function fn38(arg, arg2, arg3, arg4, arg5, arg6, arg7, finisherName)
 local humanoid = arg:FindFirstChildOfClass("Humanoid")
 if humanoid == nil then
 arg:Destroy()
@@ -38981,6 +38971,8 @@ arg:Destroy()
 return
 end
 humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+local preservePose = isPoseFreezeFinisher(finisherName)
+if preservePose then humanoid.BreakJointsOnDeath = false end
 humanoid.Health = 0
 local tbl18 = {}
 
@@ -39001,6 +38993,7 @@ end
 end
 
 arg:PivotTo(arg2:GetPivot())
+if preservePose then preserveDeathPose(arg, arg2) end
 arg.Parent = arg2.Parent
 local v120 = getthreadidentity()
 setthreadidentity(v86[56])
@@ -39086,7 +39079,7 @@ setthreadidentity(2)
 local module = require(v123)
 setthreadidentity(v125)
 fn37(model)
-fn38(v124, model, module, arg4, arg5, arg6, arg2)
+fn38(v124, model, module, arg4, arg5, arg6, arg2, finisher)
 return nil
 end)
 
@@ -68651,17 +68644,11 @@ end
 tbl17.j1()(boot)
 
 -- A successful return from the main initializer is the script-load milestone.
--- Opted-in users report automatically; new users get a one-time consent choice.
+-- Send a private script-load report automatically unless this user opted out.
 do
     local env = (type(getgenv) == "function" and getgenv()) or _G
     env.GumballKiciaFinishedLoading = true
-    if env.GumballUserReportConsent == true then
-        if type(env.GumballReportUserLoaded) == "function" then
-            pcall(env.GumballReportUserLoaded)
-        end
-    elseif env.GumballUserReportConsent == nil then
-        if type(env.GumballPromptUserReportConsent) == "function" then
-            pcall(env.GumballPromptUserReportConsent)
-        end
+    if env.GumballUserReportConsent == true and type(env.GumballReportUserLoaded) == "function" then
+        pcall(env.GumballReportUserLoaded)
     end
 end
