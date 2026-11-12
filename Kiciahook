@@ -45,6 +45,8 @@ do
         local HttpService = game:GetService("HttpService")
         local LogService = game:GetService("LogService")
         local recent, pending = {}, 0
+        local userInFlight = {}
+        local errorInFlight = {}
         local function redact(value)
             local s = tostring(value or "")
             s = s:gsub("https://[^%s]*discord%.com/api/webhooks/[^%s]+", "[REDACTED WEBHOOK]")
@@ -59,9 +61,10 @@ do
             local key = clean:sub(1, 300)
             local now = os.clock()
             if not isTest and recent[key] and now - recent[key] < 90 then return end
+            if not isTest and errorInFlight[key] then return end
             if pending >= 2 then return end
             pending += 1
-            if not isTest then recent[key] = now end
+            if not isTest then errorInFlight[key] = true end
             task.spawn(function()
                 local module = clean:match("([%w_]+Controller)") or
                     clean:match("%[Gumball ([^%]]+)%]") or "Unknown"
@@ -89,6 +92,13 @@ do
                     })
                 end)
                 pending -= 1
+                local code = ok and type(response) == "table" and
+                    tonumber(response.StatusCode or response.Status or response.status) or nil
+                local delivered = ok and (code == 200 or code == 204)
+                if not isTest then
+                    errorInFlight[key] = nil
+                    recent[key] = os.clock() - (delivered and 0 or 80)
+                end
                 if isTest then
                     if not ok then
                         status("Test request failed: " .. redact(response))
@@ -116,14 +126,12 @@ do
                 now - (tonumber(env.GumballUserReportTime) or 0) < 60 then
                 return false
             end
-            if pending >= 2 then return false end
+            if userInFlight[key] or pending >= 2 then return false end
             pending += 1
-            if not isTest then
-                env.GumballUserReportKey = key
-                env.GumballUserReportTime = now
-            end
+            userInFlight[key] = true
             task.spawn(function()
-                local payload = HttpService:JSONEncode({
+                local ok, response = pcall(function()
+                    local payload = HttpService:JSONEncode({
                     username = "Gumball User Reporter",
                     allowed_mentions = {parse = {}},
                     embeds = {{
@@ -139,15 +147,29 @@ do
                         }
                     }}
                 })
-                -- Never include cookies, passwords, authentication tokens, or IP addresses.
-                pcall(function()
-                    requestFunction({
+                    -- Never include cookies, passwords, authentication tokens, or IP addresses.
+                    return requestFunction({
                         Url=userWebhook, Method="POST",
                         Headers={["Content-Type"]="application/json"},
                         Body=payload
                     })
                 end)
                 pending -= 1
+                userInFlight[key] = nil
+                local code = ok and type(response) == "table" and
+                    tonumber(response.StatusCode or response.Status or response.status) or nil
+                local delivered = ok and (code == 200 or code == 204)
+                if delivered and not isTest then
+                    env.GumballUserReportKey = key
+                    env.GumballUserReportTime = os.clock()
+                end
+                if isTest then
+                    if delivered then
+                        status("User report test sent successfully (HTTP " .. tostring(code) .. ").")
+                    else
+                        status("User report test failed (HTTP " .. tostring(code or "unknown") .. ").")
+                    end
+                end
             end)
             return true
         end
@@ -172,9 +194,13 @@ do
             env.GumballErrorReporterConnection = LogService.MessageOut:Connect(function(message, kind)
                 if kind ~= Enum.MessageType.MessageError then return end
                 local msg = tostring(message)
+                local executorLine = msg:match("^%s*:(%d+):")
+                local anonymousStack = msg:find("Script '', Line", 1, true) ~= nil
                 if msg:find("Gumball", 1, true) or msg:find("Kicia", 1, true) or
-                    msg:find("FighterController", 1, true) then
-                    sendError(msg, nil, false)
+                    msg:find("FighterController", 1, true) or executorLine or anonymousStack then
+                    local location = executorLine and ("Executor script, line " .. executorLine) or
+                        (anonymousStack and "Executor script traceback" or nil)
+                    sendError(msg, location, false)
                 end
             end)
         end
@@ -34553,7 +34579,8 @@ local v118 = tbl17.b3()
 local localPlayer = cloneref(game:GetService("Players")).LocalPlayer
 
 local function fn36()
-return v102(mechanicsController, "_quick_attack_down_starts").Melee
+local starts = v102(mechanicsController, "_quick_attack_down_starts")
+return type(starts) == "table" and starts.Melee or nil
 end
 
 local index2 = {}
