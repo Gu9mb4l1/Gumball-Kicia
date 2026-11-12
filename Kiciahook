@@ -6,6 +6,181 @@ print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
 
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+-- Project Gumball Kicia: errors-only Discord diagnostics.
+-- PRIVATE BUILD: both webhook destinations are preconfigured; no setup needed.
+-- User identity reporting additionally requires GumballUserReportConsent = true.
+-- Do not publish or redistribute this script: it contains private webhook URLs.
+do
+    local env = (type(getgenv) == "function" and getgenv()) or _G
+    if env.GumballErrorReporterConnection then
+        pcall(function() env.GumballErrorReporterConnection:Disconnect() end)
+        env.GumballErrorReporterConnection = nil
+    end
+    env.GumballReportError = nil
+    env.GumballTestErrorReporter = nil
+    env.GumballReportUserLoaded = nil
+    env.GumballTestUserReporter = nil
+
+    -- PRIVATE BUILD: Webhook defaults are embedded for trusted users only.
+    -- Anyone with this file can extract them. Do not publish this source.
+    -- Existing environment values, if supplied, can override these defaults.
+    local errorWebhook = env.GumballErrorWebhook or "https://discord.com/api/webhooks/1570433638581936232/UndnREmAdvgKo1NrJzQ2IwPTi8ZkKDWTimH2NM-HgJAXQ_oRDaUnsp76F1qDK0Weq1Fb"
+    local userWebhook = env.GumballUserWebhook or "https://discord.com/api/webhooks/1570445108388823083/H_P15qIRgLlGAIuNP-qiXoIvMh4MytjJK2Tt1MNECAPEAWOshp-JrnbiC_2pJVK3Jgqq"
+    local function isWebhook(url)
+        return type(url) == "string" and
+            url:match("^https://[%w%.%-]*discord%.com/api/webhooks/%d+/[%w_%-]+$") ~= nil
+    end
+    local validError = isWebhook(errorWebhook)
+    local validUser = isWebhook(userWebhook)
+    local requestFunction = (syn and syn.request) or http_request or request or
+        (http and http.request) or (fluxus and fluxus.request)
+
+    local function status(message)
+        print("[Gumball Reporter] " .. tostring(message))
+    end
+    -- Stay quiet at startup. One reporter can work even when the other is not configured.
+    if not (validError or validUser) or type(requestFunction) ~= "function" then
+        -- No HTTP reporting available; the rest of Kicia still runs normally.
+    else
+        local HttpService = game:GetService("HttpService")
+        local LogService = game:GetService("LogService")
+        local recent, pending = {}, 0
+        local function redact(value)
+            local s = tostring(value or "")
+            s = s:gsub("https://[^%s]*discord%.com/api/webhooks/[^%s]+", "[REDACTED WEBHOOK]")
+            s = s:gsub("[Cc]ookie%s*[:=]%s*[^%s]+", "cookie=[REDACTED]")
+            s = s:gsub("[Tt]oken%s*[:=]%s*[^%s]+", "token=[REDACTED]")
+            s = s:gsub("[Pp]assword%s*[:=]%s*[^%s]+", "password=[REDACTED]")
+            return s:sub(1, 1500)
+        end
+        local function sendError(message, location, isTest)
+            if not validError then return false end
+            local clean = redact(message)
+            local key = clean:sub(1, 300)
+            local now = os.clock()
+            if not isTest and recent[key] and now - recent[key] < 90 then return end
+            if pending >= 2 then return end
+            pending += 1
+            if not isTest then recent[key] = now end
+            task.spawn(function()
+                local module = clean:match("([%w_]+Controller)") or
+                    clean:match("%[Gumball ([^%]]+)%]") or "Unknown"
+                local place = location or (module ~= "Unknown" and ("Module → " .. module) or "Script execution")
+                local payload = HttpService:JSONEncode({
+                    username = "Gumball Error Reporter",
+                    embeds = {{
+                        title = "Script Error Report",
+                        color = 15158332,
+                        fields = {
+                            {name="Script", value="Project Gumball Kicia", inline=false},
+                            {name="Module", value=module, inline=true},
+                            {name="Error", value=clean, inline=false},
+                            {name="Location", value=tostring(place):sub(1,200), inline=false},
+                            {name="Status", value="Failed", inline=true},
+                            {name="Time (UTC)", value=os.date("!%H:%M:%S"), inline=true}
+                        }
+                    }}
+                })
+                local ok, response = pcall(function()
+                    return requestFunction({
+                        Url=errorWebhook, Method="POST",
+                        Headers={["Content-Type"]="application/json"},
+                        Body=payload
+                    })
+                end)
+                pending -= 1
+                if isTest then
+                    if not ok then
+                        status("Test request failed: " .. redact(response))
+                    else
+                        local code = type(response)=="table" and (response.StatusCode or response.Status or response.status) or nil
+                        if code == 204 or code == 200 then
+                            status("Test sent successfully (HTTP " .. tostring(code) .. "). Check Discord.")
+                        else
+                            status("Test response HTTP " .. tostring(code or "unknown") .. ". Check Discord and webhook permissions.")
+                        end
+                    end
+                end
+            end)
+        end
+        -- Separate opt-in launch analytics. This does NOT collect login credentials.
+        -- Every player must be informed and explicitly agree before enabling
+        -- GumballUserReportConsent in their own executor session.
+        local function sendUserLoaded(isTest)
+            if not validUser or env.GumballUserReportConsent ~= true then return false end
+            local player = game:GetService("Players").LocalPlayer
+            if not player then return false end
+            local key = tostring(game.PlaceId) .. ":" .. tostring(game.JobId or "") .. ":" .. tostring(player.UserId)
+            local now = os.clock()
+            if not isTest and env.GumballUserReportKey == key and
+                now - (tonumber(env.GumballUserReportTime) or 0) < 60 then
+                return false
+            end
+            if pending >= 2 then return false end
+            pending += 1
+            if not isTest then
+                env.GumballUserReportKey = key
+                env.GumballUserReportTime = now
+            end
+            task.spawn(function()
+                local payload = HttpService:JSONEncode({
+                    username = "Gumball User Reporter",
+                    allowed_mentions = {parse = {}},
+                    embeds = {{
+                        title = "Project Gumball — User Report",
+                        color = 3066993,
+                        fields = {
+                            {name="Roblox Username", value=tostring(player.Name):sub(1,100), inline=false},
+                            {name="Display Name", value=tostring(player.DisplayName):sub(1,100), inline=false},
+                            {name="User ID", value=tostring(player.UserId), inline=false},
+                            {name="Event", value="Script Loaded", inline=true},
+                            {name="Status", value="Successfully initialized", inline=true},
+                            {name="Time (UTC)", value=os.date("!%H:%M:%S"), inline=true}
+                        }
+                    }}
+                })
+                -- Never include cookies, passwords, authentication tokens, or IP addresses.
+                pcall(function()
+                    requestFunction({
+                        Url=userWebhook, Method="POST",
+                        Headers={["Content-Type"]="application/json"},
+                        Body=payload
+                    })
+                end)
+                pending -= 1
+            end)
+            return true
+        end
+        env.GumballReportUserLoaded = function()
+            return sendUserLoaded(false)
+        end
+        env.GumballTestUserReporter = function()
+            return sendUserLoaded(true)
+        end
+        env.GumballReportError = function(message, location)
+            sendError(message, location or "Kicia", false)
+        end
+        env.GumballTestErrorReporter = function()
+            if not validError then
+                status("Error webhook is not configured.")
+                return false
+            end
+            sendError("TEST ERROR - Discord webhook check", "Manual diagnostic test", true)
+            return true
+        end
+        if validError then
+            env.GumballErrorReporterConnection = LogService.MessageOut:Connect(function(message, kind)
+                if kind ~= Enum.MessageType.MessageError then return end
+                local msg = tostring(message)
+                if msg:find("Gumball", 1, true) or msg:find("Kicia", 1, true) or
+                    msg:find("FighterController", 1, true) then
+                    sendError(msg, nil, false)
+                end
+            end)
+        end
+    end
+end
+
 -- Start automatically when Roblox and Kicia's required client objects exist.
 -- No seconds-based delay, readiness poll, or startup timeout.
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -19999,7 +20174,7 @@ return bh.c
 end
 end
 do -- bi
-local function fn35() tbl17 .a3();return{Movement={WalkSpeed={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},JumpPower={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=false,Invisible=false}},Flight={Enabled=false,Speed=100,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Sliding={Enabled=false,Speed=10,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Noclip={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},AutoStrafe={Enabled=false,Speed=50,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},LongJump={Enabled=false,Keybind={State=false,Kind="Tap",Bind=nil,ShowInList=true,Invisible=false},Mode="Under Feet",Force=60,UpwardVelocity=20,Behind=8},MovementRecorder={Enabled=false,HideUI=false,HideNotifications=false,OpenDistance=3,RenderDistance=50,LookAlignSpeed=180,AlignSnapDistance=0.2,LookSmoothing=35,Record={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}},Replay={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}}}},Removables={NoFlashbang=false,NoBurnEffect=false,NoAdsVignette=false,NoScopeOverlay=false,NoScopeReticle=false,NoGunTracers=false,NoMuzzleFlash=false,NoHitmarker=false},ThirdPerson={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false},ShowReplica=false,RayCheck=false,X=3,Y=2,Z=6},CameraFov={Enabled=false,Value=70},StretchedResolution={Enabled=false,X=13,Y=10},CustomCrosshair={Enabled=false,Style="Lines",Image={Name="",Size=32,Transparency=0},Length=12,Thickness=2,Gap=6,Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}},Rotation={Enabled=false,Angle=0,Speed=90},Spread={Enabled=false,Range={Min=4,Max=16},Speed=3},Top={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Bottom={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Left={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Right={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Text={Enabled=false,Content="",Font="Inconsolata",Size=14,Offset=24,Color=ColorSequence.new(Color3.fromRGB(255,255,255)),Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}}},FollowTarget={Enabled=false,Mode="Crosshair",Speed=20,Damper=1,SnapDistance=5}},AnimationPlayer={Enabled=false,Animation="Cat Girl Bounce",CustomId="",Speed=1,Start=0,End=100},DeviceSpoof={Enabled=false,SpoofType="VR",Interval=1},CharmSpoof={Enabled=false,Season="Season 0",Rank="Nemesis",Placement=1},PlayerSpoofer={LocalPlayer={Name={Enabled=false,Value="Nosniy"},DisplayName={Enabled=false,Value="Nosniy"},Avatar={Enabled=false,Value="20349956"},Ping={Enabled=false,Value="Low"},Keys={Enabled=false,Value=999},EventCurrency={Enabled=false,Value=9999},Winstreak={Enabled=false,Value=999},Level={Enabled=false,Value=999},CasualWins={Enabled=false,Value=99999},RankedWins={Enabled=false,Value=9999},CasualWinPercent={Enabled=false,Value=100},RankedWinPercent={Enabled=false,Value=100},RankedElo={Enabled=false,Value=3600},LeaderboardRank={Enabled=false,Value=1},FavoriteMap={Enabled=false,Value="Arena"},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false,Value=true},RobloxEmployee={Enabled=false,Value=true},NosniyTeam={Enabled=false},VerifiedBadge={Enabled=false}},OtherPlayers={Name={Enabled=false,Value=""},DisplayName={Enabled=false,Value=""},Avatar={Enabled=false,Value=""},Winstreak={Enabled=false,Value=0},Level={Enabled=false,Value=0},CasualWins={Enabled=false,Value=0},RankedWins={Enabled=false,Value=0},CasualWinPercent={Enabled=false,Value=0},RankedWinPercent={Enabled=false,Value=0},RankedElo={Enabled=false,Value=0},LeaderboardRank={Enabled=false,Value=200},FavoriteMap={Enabled=false,Value=""},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false},RobloxEmployee={Enabled=false},NosniyTeam={Enabled=false},VerifiedBadge={Enabled=false}}}};end
+local function fn35() tbl17 .a3();return{Movement={WalkSpeed={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},JumpPower={Enabled=false,Speed=2,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=false,Invisible=false}},Flight={Enabled=false,Speed=100,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Sliding={Enabled=false,Speed=10,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},Noclip={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},AutoStrafe={Enabled=false,Speed=50,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false}},LongJump={Enabled=false,Keybind={State=false,Kind="Tap",Bind=nil,ShowInList=true,Invisible=false},Mode="Under Feet",Force=60,UpwardVelocity=20,Behind=8},MovementRecorder={Enabled=false,HideUI=false,HideNotifications=false,OpenDistance=3,RenderDistance=50,LookAlignSpeed=180,AlignSnapDistance=0.2,LookSmoothing=35,Record={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}},Replay={Keybind={State=false,Kind="Toggle",Bind=nil,ShowInList=true,Invisible=false}}}},Removables={NoFlashbang=false,NoBurnEffect=false,NoAdsVignette=false,NoScopeOverlay=false,NoScopeReticle=false,NoGunTracers=false,NoMuzzleFlash=false,NoHitmarker=false},ThirdPerson={Enabled=false,Keybind={State=false,Kind="Always",Bind=nil,ShowInList=true,Invisible=false},ShowReplica=false,RayCheck=false,X=3,Y=2,Z=6},CameraFov={Enabled=false,Value=70},StretchedResolution={Enabled=false,X=13,Y=10},CustomCrosshair={Enabled=false,Style="Lines",Image={Name="",Size=32,Transparency=0},Length=12,Thickness=2,Gap=6,Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}},Rotation={Enabled=false,Angle=0,Speed=90},Spread={Enabled=false,Range={Min=4,Max=16},Speed=3},Top={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Bottom={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Left={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Right={Enabled=true,Color=ColorSequence.new(Color3.fromRGB(255,255,255))},Text={Enabled=false,Content="",Font="Inconsolata",Size=14,Offset=24,Color=ColorSequence.new(Color3.fromRGB(255,255,255)),Outline={Enabled=false,Color=Color3.fromRGB(0,0,0),Thickness=1},Animation={Enabled=false,Kind="Shimmer",Speed=1,Shimmer={Color=Color3.fromRGB(40,40,40)},Perimeter={Color=ColorSequence.new(Color3.fromRGB(255,0,0),Color3.fromRGB(0,0,255))},PingPong={BackgroundColor=Color3.fromRGB(0,0,0),MainColor=Color3.fromRGB(255,255,255),Rotation=0}}},FollowTarget={Enabled=false,Mode="Crosshair",Speed=20,Damper=1,SnapDistance=5}},AnimationPlayer={Enabled=false,Animation="Cat Girl Bounce",CustomId="",Speed=1,Start=0,End=100},DeviceSpoof={Enabled=false,SpoofType="VR",Interval=1},PlayerSpoofer={LocalPlayer={Name={Enabled=false,Value="Nosniy"},DisplayName={Enabled=false,Value="Nosniy"},Avatar={Enabled=false,Value="20349956"},Ping={Enabled=false,Value="Low"},Keys={Enabled=false,Value=999},EventCurrency={Enabled=false,Value=9999},Winstreak={Enabled=false,Value=999},Level={Enabled=false,Value=999},CasualWins={Enabled=false,Value=99999},RankedWins={Enabled=false,Value=9999},CasualWinPercent={Enabled=false,Value=100},RankedWinPercent={Enabled=false,Value=100},RankedElo={Enabled=false,Value=3600},LeaderboardRank={Enabled=false,Value=1},FavoriteMap={Enabled=false,Value="Arena"},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false,Value=true},RobloxEmployee={Enabled=false,Value=true},NosniyTeam={Enabled=false},VerifiedBadge={Enabled=false}},OtherPlayers={Name={Enabled=false,Value=""},DisplayName={Enabled=false,Value=""},Avatar={Enabled=false,Value=""},Winstreak={Enabled=false,Value=0},Level={Enabled=false,Value=0},CasualWins={Enabled=false,Value=0},RankedWins={Enabled=false,Value=0},CasualWinPercent={Enabled=false,Value=0},RankedWinPercent={Enabled=false,Value=0},RankedElo={Enabled=false,Value=0},LeaderboardRank={Enabled=false,Value=200},FavoriteMap={Enabled=false,Value=""},NametagStatus={Enabled=false,Value="Prime"},Influencer={Enabled=false},RobloxEmployee={Enabled=false},NosniyTeam={Enabled=false},VerifiedBadge={Enabled=false}}}};end
 
 tbl17.bi = function()
 local bi = tbl17.cache.bi
@@ -20028,7 +20203,7 @@ return bj.c
 end
 end
 do -- bk
-local function fn35() tbl17 .a9();return{ItemModifiers={NoMotion=false,NoCameraShake=false,NoCameraSway=false,NoShootAnimation=false,NoSprintAnimation=false,NoEquipAnimation=false,NoReloadAnimation=false,NoSpread=false,AimCooldown={Enabled=false,Percentage=50},Recoil={Enabled=false,Percentage=75},FireCooldown={Enabled=false,Percentage=25},AimSpeed={Enabled=false,Percentage=300},MeleeCooldown={Enabled=false,Percentage=25},DashCooldown={Enabled=false,Percentage=25},ExtendMeleeRange={Enabled=false,Range=10},AutomaticWeapon=false,InfiniteDoubleJumps=false,AlwaysBackstab=false,GrenadeFuse={Enabled=false,ExplodeOn="Impact",RemoveFuse=false}},BulletTracers={Enabled=false,Color=Color3.fromRGB(120,220,255),Width=0.06,Lifetime=0.6,FadeTime=0.35,Style="Beam",TextureLength=4,TextureSpeed=1,Emission=1,Glow=1,Expand=true,ExpandSpeed=18,ExpandDamper=0.7},ViewModelOffset={Enabled=false,X=0,Y=0,Z=0,Pitch=0,Yaw=0,Roll=0},Chams={Character={Enabled=false,Material="Ghost",Color=Color3.fromRGB(255,255,255),Transparency=0,StripTextures=false},Arms={Enabled=false,Material="Ghost",Color=Color3.fromRGB(255,255,255),Transparency=0,StripTextures=true},Item={Enabled=false,Material="Ghost",Color=Color3.fromRGB(255,255,255),Transparency=0,StripTextures=false}},ViewModelHighlight={Arms={Enabled=false,AlwaysOnTop=false,FillColor=Color3.fromRGB(255,255,255),FillTransparency=0.5,OutlineColor=Color3.fromRGB(255,255,255),OutlineTransparency=0},Item={Enabled=false,AlwaysOnTop=false,FillColor=Color3.fromRGB(255,255,255),FillTransparency=0.5,OutlineColor=Color3.fromRGB(255,255,255),OutlineTransparency=0}},ViewModelWireframe={Arms={Enabled=false,Color=Color3.fromRGB(255,255,255),Width=0.0025},Item={Enabled=false,Color=Color3.fromRGB(255,255,255),Width=0.0025}},PlayerHit={Enabled=false,Sound={Enabled=false,DisableGameSound=false,HeadName=nil,BodyName=nil,HeadVolume=1,HeadPitch=1,BodyVolume=1,BodyPitch=1},Notification={Enabled=false,Text="Hit %DNAME% (%NAME%) for %DMG% in %PART%"},Chams={Enabled=false,Color=Color3.fromRGB(255,0,0),Transparency=0,Duration=0.8,Material="Ghost"},HitFlash={Enabled=false,Color=Color3.fromRGB(90,170,255),Duration=1.35}},PlayerElimination={Enabled=false,Sound={Enabled=false,Name=nil,Volume=1,Pitch=1},Notification={Enabled=false,Text="Eliminated %DNAME% (%NAME%)"},Chams={Enabled=false,Color=Color3.fromRGB(255,0,0),Transparency=0,Duration=0.8,Material="Ghost"},KillFlash={Enabled=false,Color=Color3.fromRGB(90,170,255),Duration=1.35}}};end
+local function fn35() tbl17 .a9();return{ItemModifiers={NoMotion=false,NoCameraShake=false,NoCameraSway=false,NoShootAnimation=false,NoSprintAnimation=false,NoEquipAnimation=false,NoReloadAnimation=false,NoSpread=false,AimCooldown={Enabled=false,Percentage=50},InstantReload=false,Recoil={Enabled=false,Percentage=75},FireCooldown={Enabled=false,Percentage=25},AimSpeed={Enabled=false,Percentage=300},MeleeCooldown={Enabled=false,Percentage=25},DashCooldown={Enabled=false,Percentage=25},ExtendMeleeRange={Enabled=false,Range=10},AutomaticWeapon=false,InfiniteDoubleJumps=false,AlwaysBackstab=false,GrenadeFuse={Enabled=false,ExplodeOn="Impact",RemoveFuse=false}},BulletTracers={Enabled=false,Color=Color3.fromRGB(120,220,255),Width=0.06,Lifetime=0.6,FadeTime=0.35,Style="Beam",TextureLength=4,TextureSpeed=1,Emission=1,Glow=1,Expand=true,ExpandSpeed=18,ExpandDamper=0.7},ViewModelOffset={Enabled=false,X=0,Y=0,Z=0,Pitch=0,Yaw=0,Roll=0},Chams={Character={Enabled=false,Material="Ghost",Color=Color3.fromRGB(255,255,255),Transparency=0,StripTextures=false},Arms={Enabled=false,Material="Ghost",Color=Color3.fromRGB(255,255,255),Transparency=0,StripTextures=true},Item={Enabled=false,Material="Ghost",Color=Color3.fromRGB(255,255,255),Transparency=0,StripTextures=false}},ViewModelHighlight={Arms={Enabled=false,AlwaysOnTop=false,FillColor=Color3.fromRGB(255,255,255),FillTransparency=0.5,OutlineColor=Color3.fromRGB(255,255,255),OutlineTransparency=0},Item={Enabled=false,AlwaysOnTop=false,FillColor=Color3.fromRGB(255,255,255),FillTransparency=0.5,OutlineColor=Color3.fromRGB(255,255,255),OutlineTransparency=0}},ViewModelWireframe={Arms={Enabled=false,Color=Color3.fromRGB(255,255,255),Width=0.0025},Item={Enabled=false,Color=Color3.fromRGB(255,255,255),Width=0.0025}},PlayerHit={Enabled=false,Sound={Enabled=false,DisableGameSound=false,HeadName=nil,BodyName=nil,HeadVolume=1,HeadPitch=1,BodyVolume=1,BodyPitch=1},Notification={Enabled=false,Text="Hit %DNAME% (%NAME%) for %DMG% in %PART%"},Chams={Enabled=false,Color=Color3.fromRGB(255,0,0),Transparency=0,Duration=0.8,Material="Ghost"},HitFlash={Enabled=false,Color=Color3.fromRGB(90,170,255),Duration=1.35}},PlayerElimination={Enabled=false,Sound={Enabled=false,Name=nil,Volume=1,Pitch=1},Notification={Enabled=false,Text="Eliminated %DNAME% (%NAME%)"},Chams={Enabled=false,Color=Color3.fromRGB(255,0,0),Transparency=0,Duration=0.8,Material="Ghost"},KillFlash={Enabled=false,Color=Color3.fromRGB(90,170,255),Duration=1.35}}};end
 
 tbl17.bk = function()
 local bk = tbl17.cache.bk
@@ -34378,8 +34553,7 @@ local v118 = tbl17.b3()
 local localPlayer = cloneref(game:GetService("Players")).LocalPlayer
 
 local function fn36()
-local quickAttackStarts = v102(mechanicsController, "_quick_attack_down_starts")
-return quickAttackStarts and quickAttackStarts.Melee or nil
+return v102(mechanicsController, "_quick_attack_down_starts").Melee
 end
 
 local index2 = {}
@@ -34599,7 +34773,7 @@ end
 end
 
 for k in tbl19, nil, nil do
-local v117, v118 = v115.resolveHighestPriority(arg, function(arg2)
+local _v117_84, v118 = v115.resolveHighestPriority(arg, function(arg2)
 return arg2[k]
 end, nil)
 
@@ -35222,6 +35396,7 @@ if v125 == nil then
 return
 end
 arg:_PlayResolvedEmote(v125, v124)
+return nil
 end }, { __index = v123 })
 
 debug.setupvalue(v120, v86[63], obj)
@@ -35608,8 +35783,7 @@ local tbl18 = {}
 arg._proposed[arg2] = tbl18
 v119 = tbl18
 else
-while v86[34] do
-end
+-- (anti-tamper freeze trap removed)
 
 v119 = v118
 end
@@ -35738,7 +35912,7 @@ end
 return tbl19, tbl20
 end
 
-local v115, v116, v117 = fn36()
+local _v115, v116, v117 = fn36()
 local v118, v119 = fn37()
 
 return table.freeze({
@@ -36014,7 +36188,7 @@ local tbl19
 
 tbl19 = {
 cloneWrapSelection = function(arg)
-local v115
+local v115 = nil
 return arg ~= nil and { Name = arg.Name, Inverted = arg.Inverted } or v115
 end,
 cosmeticTypeToSlotKey = function(arg)
@@ -36298,8 +36472,7 @@ end
 
 if arg.Skin ~= arg2.Skin or arg.Charm ~= arg2.Charm or arg.Finisher ~= arg2.Finisher then
 if n26 > 4809 then
-while v86[34] do
-end
+-- (anti-tamper freeze trap removed)
 end
 
 return false
@@ -36370,8 +36543,7 @@ if wrap ~= nil then
 if true then
 tbl18.Wrap = { Name = wrap.Name, Inverted = wrap.Inverted or nil }
 else
-while v86[34] do
-end
+-- (anti-tamper freeze trap removed)
 end
 end
 
@@ -36614,9 +36786,9 @@ local tbl19 = { _store = arg, _onlyUseFavoritesState = arg2, _rankCharm = arg3, 
 if not (n25 > 3892) then
 return setmetatable(tbl19, index2)
 end
+return nil
 
-while true do
-end
+-- (anti-tamper freeze trap removed)
 end
 
 local function fn39(arg, arg2)
@@ -38037,6 +38209,7 @@ break
 end
 end
 end
+return nil
 end
 end
 
@@ -38207,8 +38380,7 @@ elseif arg:IsA("Decal") or arg:IsA("Texture") then
 if true then
 arg.Transparency = 1
 else
-while true do
-end
+-- (anti-tamper freeze trap removed)
 end
 elseif arg:IsA("ParticleEmitter") or arg:IsA("Trail") or arg:IsA("Beam") then
 arg.Enabled = v86[153]
@@ -38739,6 +38911,7 @@ local module = require(v123)
 setthreadidentity(v125)
 fn37(model)
 fn38(v124, model, module, arg4, arg5, arg6, arg2)
+return nil
 end)
 
 arg._restore = { Func = replicateFromServer, TargetConstant = v120 }
@@ -38955,7 +39128,7 @@ local flag19 = arg._rankPatchActive and player == localPlayer and (v127 == nil o
 local v129 = nil
 
 if flag19 then
-local v130, v131 = v117.findCharmPayload(v128)
+local _v130, v131 = v117.findCharmPayload(v128)
 v129 = v117.resolvePatchedPayload(v131, arg._rankCharm)
 end
 
@@ -39283,7 +39456,7 @@ local viewModel = v102(v123, "ViewModel")
 local data = viewModel ~= nil and v102(viewModel, "Data") or nil
 
 if data ~= nil then
-local v125, v126 = v116.findCharmPayload(arg._viewModelHook:GetCosmeticRestoreData(localPlayer, name) or data)
+local _v125, v126 = v116.findCharmPayload(arg._viewModelHook:GetCosmeticRestoreData(localPlayer, name) or data)
 
 if v126 ~= nil then
 local name2 = v102(v126, "Name")
@@ -39297,7 +39470,7 @@ v126 = v127
 end
 end
 
-local v127, v128 = v116.findCharmPayload(data)
+local _v127, v128 = v116.findCharmPayload(data)
 
 if not v116.areMetadataEqual(v126, v128) then
 arg:_ReloadWithCosmetics(fighterState, name, v123, v124)
@@ -39490,8 +39663,7 @@ tbl18:_ReloadEquippedSeasonCharms()
 return
 end
 
-while true do
-end
+-- (anti-tamper freeze trap removed)
 end)
 
 return tbl18
@@ -40285,9 +40457,9 @@ end
 if not (n26 <= 4781) then
 return v115.err("EmoteEquipWheel", "prototype_lookup", "EquipEmote.__index not found")
 end
+return nil
 
-while true do
-end
+-- (anti-tamper freeze trap removed)
 end
 
 index2._Revert = function(arg)
@@ -40641,7 +40813,7 @@ end
 local restoreClosures = {}
 
 for k in debug.getprotos(v121) do
-local v122 = debug.getproto(v121, k, v86[34])[1]
+local v122 = (debug.getproto :: any)(v121, k, v86[34])[1]
 
 if v122 ~= nil then
 for k2, v123 in debug.getconstants(v122) do
@@ -42190,9 +42362,9 @@ end)
 
 return tbl18
 end
+return nil
 
-while true do
-end
+-- (anti-tamper freeze trap removed)
 end
 
 index2.SetRuntimeEnabled = function(arg, runtimeEnabled)
@@ -42527,7 +42699,7 @@ _configManager = v115.new({
 DefaultConfig = v120,
 CurrentVersion = v86[56],
 Migrations = { fn36 },
-SavePath = "kiciarebuild/rivals/cosmetics",
+SavePath = "kiciahook/rivals_v3/cosmetics/states",
 Deserialize = fn38,
 }),
 _stateConfig = v119,
@@ -42703,17 +42875,6 @@ return v116.VoidOk
 end
 
 index2.LoadCoreConfig = function(arg)
--- Create the default core config on first run before trying to load it.
--- The cosmetics directory is prepared during bootstrap.
-if not arg._configManager:Exists("core_config") then
-local created = arg._configManager:SaveDefaultToFile("core_config")
-if not created.Ok then
-arg:_RestoreSessionState()
-arg:_ConnectAutoSave()
-return v116.err("CosmeticsConfig", "LoadCoreConfig", string.format("Failed to create default core config: %s", tostring(created.Error.Detail)))
-end
-end
-
 local coreConfig = arg._configManager:LoadFromFile("core_config")
 
 if not coreConfig.Ok then
@@ -49998,6 +50159,55 @@ return
 end
 v103(arg2, "ShootCooldown", math.max(0, shootCooldown * math.clamp(tonumber(arg3.Percentage) or 1, 0, 1)))
 end,
+InstantReload = function(originalInfo, currentInfo, enabled)
+-- The game can store its reload length in named animation descriptors, not
+-- just ReloadTime. Always use saved, unmodified values when toggling OFF.
+local factor = enabled and 0.001 or 1
+local function duration(n)
+    if type(n) ~= "number" then return n end
+    if not enabled then return n end
+    return math.max(0.025, n * factor)
+end
+local timeFields = {
+    Length = true, ActionTimestamp = true,
+    Duration = true, Cooldown = true,
+}
+local adjusted = {}
+local function adjustDescriptor(base, target)
+    if type(base) ~= "table" or type(target) ~= "table" or adjusted[target] then return end
+    adjusted[target] = true
+    for name in pairs(timeFields) do
+        local original = rawget(base, name)
+        if type(original) == "number" then
+            rawset(target, name, duration(original))
+        end
+    end
+end
+local animationMap = rawget(originalInfo, "Animations")
+local liveMap = rawget(currentInfo, "Animations")
+if type(animationMap) == "table" and type(liveMap) == "table" then
+    for name, reference in pairs(animationMap) do
+        if type(name) == "string" and name:lower():find("reload", 1, true) then
+            local liveRef = rawget(liveMap, name)
+            adjustDescriptor(reference, liveRef)
+            if (type(reference) == "string" or type(reference) == "number") and
+                (type(liveRef) == "string" or type(liveRef) == "number") then
+                adjustDescriptor(rawget(originalInfo, reference), rawget(currentInfo, liveRef))
+            end
+        end
+    end
+end
+for name, original in pairs(originalInfo) do
+    if type(name) == "string" and name:lower():find("reload", 1, true) then
+        local current = rawget(currentInfo, name)
+        if type(original) == "number" and type(current) == "number" then
+            rawset(currentInfo, name, duration(original))
+        else
+            adjustDescriptor(original, current)
+        end
+    end
+end
+end,
 AutomaticWeapon = function(arg, arg2, arg3)
 local inputSpammingEnabled = v102(arg, "InputSpammingEnabled")
 if inputSpammingEnabled == nil then
@@ -50420,6 +50630,7 @@ tbl18:_SetupCameraShakeDisabler(itemModifiers, v126)
 tbl18:_SetupCameraSwayDisabler(itemModifiers, v126)
 tbl18:_SetupNoSpread(itemModifiers)
 tbl18:_SetupAimCooldown(itemModifiers)
+tbl18:_SetupInstantReloadInput(itemModifiers, arg, arg3)
 tbl18:_SetupAnimationDisabler(itemModifiers, v126)
 tbl18:_SetupInfoModifier(itemModifiers)
 tbl18:_SetupGrenadeFuse(itemModifiers, v126)
@@ -50507,6 +50718,228 @@ fn36()
 fn37()
 end
 
+index2._SetupInstantReloadInput = function(arg, trove, playerContext, inputHook)
+-- Native reloads still go to the game server. This controller minimizes the
+-- client timing *without* faking ammo or firing duplicate reload requests.
+-- UE exposes _reload_cooldown and StartReloading identifiers, but its encoded
+-- implementation cannot be safely reconstructed from the provided source.
+local runService = game:GetService("RunService")
+local modifiedViewmodelInfos = setmetatable({}, { __mode = "k" })
+local tracked = setmetatable({}, { __mode = "k" })
+local deepCopy = tbl17.d()
+local env = (type(getgenv) == "function" and getgenv()) or _G
+local deadlineFields = {
+    "_reload_cooldown", "_reload_cancel_cooldown", "_reload_cancel_expiration",
+}
+local function enabled()
+    return v118.Data.ItemModifiers.InstantReload == true
+end
+local function ammoCount(item)
+    local data = item and item._data
+    local n = type(data) == "table" and v102(data, "Ammo") or nil
+    return type(n) == "number" and n or nil
+end
+local function patchViewmodel(item, on)
+    local inner = item and item.Inner
+    local viewmodel = type(inner) == "table" and v102(inner, "ViewModel") or nil
+    local info = type(viewmodel) == "table" and v102(viewmodel, "Info") or nil
+    if type(info) ~= "table" or info == item.Info then return end
+    local saved = modifiedViewmodelInfos[info]
+    if not on then
+        if saved then
+            for name, original in pairs(saved) do
+                if type(name) == "string" and name:lower():find("reload", 1, true) then
+                    local target = rawget(info, name)
+                    if type(original) == "table" and type(target) == "table" then
+                        for field, value in pairs(original) do
+                            if type(value) == "number" and
+                                (field == "Length" or field == "ActionTimestamp" or field == "Duration" or field == "Cooldown") then
+                                rawset(target, field, value)
+                            end
+                        end
+                    elseif type(original) == "number" then
+                        rawset(info, name, original)
+                    end
+                end
+            end
+            -- Also restore descriptors referenced from Animations by key.
+            local savedMap = rawget(saved, "Animations")
+            local liveMap = rawget(info, "Animations")
+            if type(savedMap) == "table" and type(liveMap) == "table" then
+                for label, ref in pairs(savedMap) do
+                    if type(label) == "string" and label:lower():find("reload", 1, true) then
+                        local currentRef = rawget(liveMap, label)
+                        if type(ref) == "string" and type(currentRef) == "string" then
+                            local original = rawget(saved, ref)
+                            local live = rawget(info, currentRef)
+                            if type(original) == "table" and type(live) == "table" then
+                                for _, field in ipairs({"Length", "ActionTimestamp", "Duration", "Cooldown"}) do
+                                    if type(original[field]) == "number" then rawset(live, field, original[field]) end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            modifiedViewmodelInfos[info] = nil
+        end
+        return
+    end
+    if not saved then
+        saved = deepCopy(info)
+        modifiedViewmodelInfos[info] = saved
+    end
+    local function fast(n)
+        return type(n) == "number" and math.max(0.025, n * 0.001) or n
+    end
+    local function adjust(base, live)
+        if type(base) ~= "table" or type(live) ~= "table" then return end
+        for _, field in ipairs({"Length", "ActionTimestamp", "Duration", "Cooldown"}) do
+            if type(rawget(base, field)) == "number" then rawset(live, field, fast(rawget(base, field))) end
+        end
+    end
+    local savedMap = rawget(saved, "Animations")
+    local liveMap = rawget(info, "Animations")
+    if type(savedMap) == "table" and type(liveMap) == "table" then
+        for name, ref in pairs(savedMap) do
+            if type(name) == "string" and name:lower():find("reload", 1, true) then
+                local liveRef = rawget(liveMap, name)
+                adjust(ref, liveRef)
+                if type(ref) == "string" and type(liveRef) == "string" then
+                    adjust(rawget(saved, ref), rawget(info, liveRef))
+                end
+            end
+        end
+    end
+    for name, original in pairs(saved) do
+        if type(name) == "string" and name:lower():find("reload", 1, true) then
+            if type(original) == "number" then rawset(info, name, fast(original))
+            else adjust(original, rawget(info, name)) end
+        end
+    end
+end
+local function updateItem(item, on, now)
+    if type(item) ~= "table" then return end
+    local inner = item.Inner
+    if type(inner) ~= "table" then return end
+    patchViewmodel(item, on)
+    local state = tracked[inner]
+    if not on then
+        if state then
+            for field, previous in pairs(state.changed or {}) do
+                if v102(inner, field) == previous.adjusted then
+                    v103(inner, field, previous.original)
+                end
+            end
+            tracked[inner] = nil
+        end
+        return
+    end
+    if not state then
+        state = { changed = {}, ammoAtStart = ammoCount(item), lastAmmo = ammoCount(item) }
+        tracked[inner] = state
+    end
+    local currentAmmo = ammoCount(item)
+    if currentAmmo ~= nil then
+        if state.lastAmmo ~= nil then
+            if currentAmmo > state.lastAmmo then
+                state.serverAmmoUpdated = true
+            elseif currentAmmo < state.lastAmmo then
+                state.serverAmmoUpdated = false
+            end
+        end
+        state.lastAmmo = currentAmmo
+    end
+    -- The no-ammo shooting cooldown is deliberately not forged: otherwise
+    -- the UI appears ready but the server still rejects shots.
+    for _, field in ipairs(deadlineFields) do
+        local current = v102(inner, field)
+        if type(current) == "number" and current > now then
+            local previous = state.changed[field]
+            if not previous or current ~= previous.adjusted then
+                local new = now
+                v103(inner, field, new)
+                state.changed[field] = {original = current, adjusted = new}
+                state.lastReloadAt = now
+            end
+        end
+    end
+end
+local function itemsInContext()
+    local inner = playerContext.Inner
+    local behaviors = type(inner) == "table" and v102(inner, "ItemBehaviors") or nil
+    if not behaviors then return nil end
+    return behaviors
+end
+local function scan(on)
+    local behaviors = itemsInContext()
+    if not behaviors then return end
+    local collection = behaviors:GetItems()
+    if type(collection) ~= "table" then return end
+    local now = tick()
+    for _, item in pairs(collection) do
+        -- A single unsupported weapon must not stop updates for the rest.
+        pcall(updateItem, item, on, now)
+    end
+end
+local binding = trove:Add(inputHook:Reserve())
+binding:SetHandler(function(entry)
+    if entry.Type ~= "StartReloading" or not enabled() then return end
+    local behaviors = itemsInContext()
+    local item = behaviors and behaviors:FindByObjectId(entry.ObjectId) or nil
+    if item and item.Inner then
+        task.defer(function() pcall(updateItem, item, true, tick()) end)
+    end
+end)
+binding:SetEnabled(true)
+local previousEnabled = false
+local nextCheck = 0
+trove:Connect(runService.Heartbeat, function()
+    local now = tick()
+    if now < nextCheck then return end
+    nextCheck = now + 0.04
+    local on = enabled()
+    if not on and not previousEnabled then return end
+    previousEnabled = on
+    pcall(scan, on)
+end)
+-- On-demand evidence for diagnosing server-validated reloads. No automatic
+-- console noise and no telemetry are added.
+local diagnostics = function()
+    local result = { Enabled = enabled(), Weapons = {} }
+    local behaviors = itemsInContext()
+    if not behaviors then return result end
+    local collection = behaviors:GetItems()
+    if type(collection) ~= "table" then return result end
+    local now = tick()
+    for _, item in pairs(collection) do
+        local inner = item.Inner
+        if type(inner) == "table" and item.__type == "Gun" then
+            local state = tracked[inner]
+            local ammo = ammoCount(item)
+            local reserve = type(item._data) == "table" and rawget(item._data, "AmmoReserve") or nil
+            local deadline = rawget(inner, "_reload_cooldown")
+            table.insert(result.Weapons, {
+                Weapon = tostring(item.Name), Ammo = ammo, AmmoReserve = reserve,
+                LocalReloadRemaining = type(deadline) == "number" and math.max(0, deadline - now) or nil,
+                ServerAmmoUpdated = state and state.serverAmmoUpdated or false,
+                LastReloadObservedSecondsAgo = state and state.lastReloadAt and math.floor((now-state.lastReloadAt)*100)/100 or nil,
+            })
+        end
+    end
+    return result
+end
+env.GumballReloadDiagnostics = diagnostics
+-- Trove cleaning may not run on an instant unload, so do not keep a stale
+-- diagnostics function tied to destroyed context if a newer build replaced it.
+if trove.Add then
+    trove:Add(function()
+        if env.GumballReloadDiagnostics == diagnostics then env.GumballReloadDiagnostics = nil end
+        pcall(scan, false)
+    end)
+end
+end
+
 index2._SetupInfoModifier = function(arg, arg2)
 local function fn36()
 local fireCooldown = v118.Data.ItemModifiers.FireCooldown
@@ -50515,6 +50948,11 @@ end
 
 arg2:Connect(v118:GetPropertyChangedSignal({ "ItemModifiers", "FireCooldown", "Enabled" }), fn36)
 arg2:Connect(v118:GetPropertyChangedSignal({ "ItemModifiers", "FireCooldown", "Percentage" }), fn36)
+
+local function updateInstantReload()
+    arg._infoModifier:SetChange("InstantReload", v118.Data.ItemModifiers.InstantReload == true or nil)
+end
+arg2:Connect(v118:GetPropertyChangedSignal({ "ItemModifiers", "InstantReload" }), updateInstantReload)
 
 local function fn37()
 local aimSpeed = v118.Data.ItemModifiers.AimSpeed
@@ -50561,6 +50999,7 @@ arg2:Connect(v118:GetPropertyChangedSignal({ "ItemModifiers", "Recoil", "Enabled
 arg2:Connect(v118:GetPropertyChangedSignal({ "ItemModifiers", "Recoil", "Percentage" }), fn42)
 fn42()
 fn36()
+updateInstantReload()
 fn37()
 fn38()
 fn39()
@@ -59466,7 +59905,7 @@ return ic.c
 end
 end
 do -- id
-local function fn35() tbl17 .aE();local function l(I,W,N,P,a,e)I:AddGroup({Source=I:AddToggle({Label=W,Config={"ItemModifiers",P,"Enabled"}})}):AddSlider({Label=N,Min=a,Max=e,Config={"ItemModifiers",P,"Percentage"}});end;return function(I)local W,N,P,a=I:AddSection({Title="Aim & Fire",Side="left"}),I:AddSection({Title="Cooldowns",Side="left"}),I:AddSection({Title="Melee",Side="right"}),I:AddSection({Title="Grenades",Side="right"});l(W,"Reduce Recoil","Recoil Reduction (%)","Recoil",0,100);W:AddToggle({Label="Remove Spread",Config={"ItemModifiers","NoSpread"}});W:AddToggle({Label="Automatic Fire",Config={"ItemModifiers","AutomaticWeapon"}});l(W,"Aim Speed Override","Aim Speed (%)","AimSpeed",50,500);l(N,"Fire Cooldown Override","Percentage","FireCooldown",0,100);l(N,"Aim Cooldown Override","Percentage","AimCooldown",1,100);l(N,"Melee Cooldown Override","Percentage","MeleeCooldown",0,100);l(N,"Dash Cooldown Override","Percentage","DashCooldown",0,100);P:AddToggle({Label="Always Backstab",Config={"ItemModifiers","AlwaysBackstab"}});P:AddGroup({Source=P:AddToggle({Label="Extend Melee Range",Config={"ItemModifiers","ExtendMeleeRange","Enabled"}})}):AddSlider({Label="Range",Min=5,Max=20,Config={"ItemModifiers","ExtendMeleeRange","Range"}});N=a:AddGroup({Source=a:AddToggle({Label="Fuse Override",Config={"ItemModifiers","GrenadeFuse","Enabled"}})});N:AddDropdown({Label="Explode On",Options={"Impact","Throw"},Config={"ItemModifiers","GrenadeFuse","ExplodeOn"}});N:AddToggle({Label="Remove Fuse",Config={"ItemModifiers","GrenadeFuse","RemoveFuse"}});end;end
+local function fn35() tbl17 .aE();local function l(I,W,N,P,a,e)I:AddGroup({Source=I:AddToggle({Label=W,Config={"ItemModifiers",P,"Enabled"}})}):AddSlider({Label=N,Min=a,Max=e,Config={"ItemModifiers",P,"Percentage"}});end;return function(I)local W,N,P,a=I:AddSection({Title="Aim & Fire",Side="left"}),I:AddSection({Title="Cooldowns",Side="left"}),I:AddSection({Title="Melee",Side="right"}),I:AddSection({Title="Grenades",Side="right"});l(W,"Reduce Recoil","Recoil Reduction (%)","Recoil",0,100);W:AddToggle({Label="Remove Spread",Config={"ItemModifiers","NoSpread"}});W:AddToggle({Label="Automatic Fire",Config={"ItemModifiers","AutomaticWeapon"}});l(W,"Aim Speed Override","Aim Speed (%)","AimSpeed",50,500);l(N,"Fire Cooldown Override","Percentage","FireCooldown",0,100);N:AddToggle({Label="Instant Reload",Config={"ItemModifiers","InstantReload"}});l(N,"Aim Cooldown Override","Percentage","AimCooldown",1,100);l(N,"Melee Cooldown Override","Percentage","MeleeCooldown",0,100);l(N,"Dash Cooldown Override","Percentage","DashCooldown",0,100);P:AddToggle({Label="Always Backstab",Config={"ItemModifiers","AlwaysBackstab"}});P:AddGroup({Source=P:AddToggle({Label="Extend Melee Range",Config={"ItemModifiers","ExtendMeleeRange","Enabled"}})}):AddSlider({Label="Range",Min=5,Max=20,Config={"ItemModifiers","ExtendMeleeRange","Range"}});N=a:AddGroup({Source=a:AddToggle({Label="Fuse Override",Config={"ItemModifiers","GrenadeFuse","Enabled"}})});N:AddDropdown({Label="Explode On",Options={"Impact","Throw"},Config={"ItemModifiers","GrenadeFuse","ExplodeOn"}});N:AddToggle({Label="Remove Fuse",Config={"ItemModifiers","GrenadeFuse","RemoveFuse"}});end;end
 
 tbl17.id = function()
 local id = tbl17.cache.id
@@ -60240,7 +60679,7 @@ return il.c
 end
 end
 do -- im
-local function fn35() tbl17 .aL(); tbl17 .aE(); tbl17 .hN();local I,W= tbl17 .e1(), tbl17 .dY();return function(l,N,P)local a,e,c=N:AddSection({Title="Cosmetic Runtime",Side="left"}),N:AddSection({Title="Unlock All",Side="left"}),N:AddSection({Title="Community",Side="right"});local E,p,T=a:AddToggle({Label="Enable Cosmetic Changes",OnChanged=function(t)l.CosmeticsConfig:SetRuntimeEnabled(t);P();end}),a:AddLabel({Label="Cosmetic features are paused until cosmetic changes are enabled.",TextColor=Color3.fromRGB(255,190,90)}),a:AddToggle({Label="Use Custom Loadout",Tooltip="Applies the choices from the Skins, Wraps, Charms, and Finishers catalogs.",OnChanged=function(t)l.Cosmetics:SetSkinChangerEnabled(t);P();end});a:AddButton({Label="Reroll Random Cosmetics",OnClick=function()l.Cosmetics:RerollAll();end});local a,t,x=e:AddToggle({Label="Unlock All Cosmetics",OnChanged=function(S)l.Cosmetics:SetUnlockerEnabled(S);end}),e:AddMultiDropdown({Label="Cosmetic Types to Unlock",Options=W.All,Search=true,OnChanged=function(W)l.CosmeticsConfig:SetUnlockedTypes(W);end}),e:AddMultiDropdown({Label="Cosmetic Rarities to Unlock",Options=I,Search=true,Default={Legendary=true,Mythical=true,Unobtainable=true},OnChanged=function(I)l.CosmeticsConfig:SetUnlockedRarities(I);end});c:AddToggle({Label="Share Skins",Config={"UserServer","ShareSkins"}});c:AddToggle({Label="Show Active Cosmetics",Config={"UserServer","ShowActive"}});local function I(W)E:Set(W.RuntimeEnabled,true);T:Set(W.SkinChangerEnabled,true);a:Set(W.UnlockerEnabled,true);p:SetVisible(not W.RuntimeEnabled);t:Set(W.Types,true);x:Set(W.Rarities,true);P();end;E:OnChanged(function(W)p:SetVisible(not W);end);E:Connect(l.CosmeticsConfig.StateConfigLoaded,I);N=l.CosmeticsConfig:GetStateConfigState();I(N);l.CosmeticsConfig:SetUnlockedTypes(N.Types);l.CosmeticsConfig:SetUnlockedRarities(N.Rarities);end;end
+local function fn35() tbl17 .aL(); tbl17 .aE(); tbl17 .hN();local I,W= tbl17 .e1(), tbl17 .dY();return function(l,N,P)local a,e,c=N:AddSection({Title="Cosmetic Runtime",Side="left"}),N:AddSection({Title="Unlock All",Side="left"}),N:AddSection({Title="Community",Side="right"});local E,p,T=a:AddToggle({Label="Enable Cosmetic Changes",OnChanged=function(t)l.CosmeticsConfig:SetRuntimeEnabled(t);P();end}),a:AddLabel({Label="Cosmetic features are paused until cosmetic changes are enabled.",TextColor=Color3.fromRGB(255,190,90)}),a:AddToggle({Label="Use Custom Loadout",Tooltip="Applies the choices from the Skins, Wraps, Charms, and Finishers catalogs.",OnChanged=function(t)l.Cosmetics:SetSkinChangerEnabled(t);P();end});a:AddButton({Label="Reroll Random Cosmetics",OnClick=function()l.Cosmetics:RerollAll();end});local a_154,t,x=e:AddToggle({Label="Unlock All Cosmetics",OnChanged=function(S)l.Cosmetics:SetUnlockerEnabled(S);end}),e:AddMultiDropdown({Label="Cosmetic Types to Unlock",Options=W.All,Search=true,OnChanged=function(W)l.CosmeticsConfig:SetUnlockedTypes(W);end}),e:AddMultiDropdown({Label="Cosmetic Rarities to Unlock",Options=I,Search=true,Default={Legendary=true,Mythical=true,Unobtainable=true},OnChanged=function(I)l.CosmeticsConfig:SetUnlockedRarities(I);end});c:AddToggle({Label="Share Skins",Config={"UserServer","ShareSkins"}});c:AddToggle({Label="Show Active Cosmetics",Config={"UserServer","ShowActive"}});local function I(W)E:Set(W.RuntimeEnabled,true);T:Set(W.SkinChangerEnabled,true);a_154:Set(W.UnlockerEnabled,true);p:SetVisible(not W.RuntimeEnabled);t:Set(W.Types,true);x:Set(W.Rarities,true);P();end;E:OnChanged(function(W)p:SetVisible(not W);end);E:Connect(l.CosmeticsConfig.StateConfigLoaded,I);N=l.CosmeticsConfig:GetStateConfigState();I(N);l.CosmeticsConfig:SetUnlockedTypes(N.Types);l.CosmeticsConfig:SetUnlockedRarities(N.Rarities);end;end
 
 tbl17.im = function()
 local im = tbl17.cache.im
@@ -60254,7 +60693,7 @@ return im.c
 end
 end
 do -- io
-local function fn35()local I= tbl17 .aE(); tbl17 .hN();local function l(W,N)if W.Ok then return false;end;I.Notifications.get():Notify({{Text=N.." failed: "},{Text=tostring(W.Error.Detail)}});return true;end;return function(W,N)local P,a,e,c=N:AddSection({Title="Library",Side="left"}),N:AddSection({Title="Transfer",Side="right"}),N:AddSection({Title="Automation",Side="right"}),W.CosmeticsConfig;local W,N,E,p=P:AddTextBox({Label="Cosmetic Preset Name"}),P:AddButton({Label="Create Cosmetic Preset"}),P:AddLabel({Label="No Cosmetic Presets yet. Enter a name to create one.",TextColor=Color3.fromRGB(255,190,90)}),P:AddList({Label="Cosmetic Preset Library",Height=140,Search=true,SelectFirst=false,OnChanged=function(T)c:SetPresetName(T);end});P:AddButton({Label="Load Selected Cosmetic Preset",Confirm=true,OnClick=function()l(c:LoadStateConfig(),"Loading cosmetic preset");end});P:AddButton({Label="Save to Selected Cosmetic Preset",Confirm=true,OnClick=function()l(c:SaveStateConfig(),"Saving cosmetic preset");end});a:AddButton({Label="Export to Clipboard",OnClick=function()local T=c:ExportStateToJson();if T.Ok then setclipboard(T.Value);I.Notifications.get():Notify("Copied your current cosmetics to the clipboard");else l(T,"Exporting cosmetics");end;end});local I=a:AddTextBox({Label="Import (paste cosmetics)",FocusLostOnly=true});a:AddButton({Label="Import Cosmetics",Confirm=true,OnClick=function()local a=I.Value;if a~=""then l(c:LoadStateFromJson(a),"Importing cosmetics");end;end});local function I()return c:GetAllStateConfigs();end;local function a(T,t)return e:AddDropdown({Label=T,Options=I(),GetOptions=I,Search=true,CloseOnSelect=true,OnChanged=function(T)t(T);end});end;local T,t,x,S=e:AddToggle({Label="Auto Load Cosmetic Preset",OnChanged=function(J)c:SetAutoLoadEnabled(J);end}),a("Cosmetic Preset to Auto Load",function(J)c:SetAutoLoadPresetName(J);end),e:AddToggle({Label="Auto Save Cosmetic Preset",OnChanged=function(e)c:SetAutoSaveEnabled(e);end}),a("Cosmetic Preset to Auto Save",function(a)c:SetAutoSavePresetName(a);end);local function a()local e,J=c:GetState(),I();p:SetOptions(J);p:Set(e.PresetName,true);E:SetVisible(#J==0);T:Set(e.AutoLoad,true);t:Set(e.AutoLoadPresetName,true);x:Set(e.AutoSave,true);S:Set(e.AutoSavePresetName,true);end;P:AddButton({Label="Delete Selected Cosmetic Preset",Confirm=true,OnClick=function()l(c:DeleteCurrentPreset(),"Deleting cosmetic preset");a();end});N:OnClick(function()local I=W.Value:gsub("%s+","");if#I==0 then return;end;l(c:CreateDefaultPreset(I),"Creating cosmetic preset");a();end);a();end;end
+local function fn35()local I= tbl17 .aE(); tbl17 .hN();local function l(W,N)if W.Ok then return false;end;I.Notifications.get():Notify({{Text=N.." failed: "},{Text=tostring(W.Error.Detail)}});return true;end;return function(W,N)local P,a,e,c=N:AddSection({Title="Library",Side="left"}),N:AddSection({Title="Transfer",Side="right"}),N:AddSection({Title="Automation",Side="right"}),W.CosmeticsConfig;local W_155,N_156,E,p=P:AddTextBox({Label="Cosmetic Preset Name"}),P:AddButton({Label="Create Cosmetic Preset"}),P:AddLabel({Label="No Cosmetic Presets yet. Enter a name to create one.",TextColor=Color3.fromRGB(255,190,90)}),P:AddList({Label="Cosmetic Preset Library",Height=140,Search=true,SelectFirst=false,OnChanged=function(T)c:SetPresetName(T);end});P:AddButton({Label="Load Selected Cosmetic Preset",Confirm=true,OnClick=function()l(c:LoadStateConfig(),"Loading cosmetic preset");end});P:AddButton({Label="Save to Selected Cosmetic Preset",Confirm=true,OnClick=function()l(c:SaveStateConfig(),"Saving cosmetic preset");end});a:AddButton({Label="Export to Clipboard",OnClick=function()local T=c:ExportStateToJson();if T.Ok then setclipboard(T.Value);I.Notifications.get():Notify("Copied your current cosmetics to the clipboard");else l(T,"Exporting cosmetics");end;end});local I=a:AddTextBox({Label="Import (paste cosmetics)",FocusLostOnly=true});a:AddButton({Label="Import Cosmetics",Confirm=true,OnClick=function()local a=I.Value;if a~=""then l(c:LoadStateFromJson(a),"Importing cosmetics");end;end});local function I_157()return c:GetAllStateConfigs();end;local function a_158(T,t)return e:AddDropdown({Label=T,Options=I_157(),GetOptions=I_157,Search=true,CloseOnSelect=true,OnChanged=function(T)t(T);end});end;local T,t,x,S=e:AddToggle({Label="Auto Load Cosmetic Preset",OnChanged=function(J)c:SetAutoLoadEnabled(J);end}),a_158("Cosmetic Preset to Auto Load",function(J)c:SetAutoLoadPresetName(J);end),e:AddToggle({Label="Auto Save Cosmetic Preset",OnChanged=function(e)c:SetAutoSaveEnabled(e);end}),a_158("Cosmetic Preset to Auto Save",function(a)c:SetAutoSavePresetName(a);end);local function a_159()local e,J=c:GetState(),I_157();p:SetOptions(J);p:Set(e.PresetName,true);E:SetVisible(#J==0);T:Set(e.AutoLoad,true);t:Set(e.AutoLoadPresetName,true);x:Set(e.AutoSave,true);S:Set(e.AutoSavePresetName,true);end;P:AddButton({Label="Delete Selected Cosmetic Preset",Confirm=true,OnClick=function()l(c:DeleteCurrentPreset(),"Deleting cosmetic preset");a_159();end});N_156:OnClick(function()local I=W_155.Value:gsub("%s+","");if#I==0 then return;end;l(c:CreateDefaultPreset(I),"Creating cosmetic preset");a_159();end);a_159();end;end
 
 tbl17.io = function()
 local io = tbl17.cache.io
@@ -61618,236 +62057,6 @@ end
 return ji.c
 end
 end
-;(function()
-    local Players=game:GetService("Players")
-    local ReplicatedStorage=game:GetService("ReplicatedStorage")
-    local LocalPlayer=Players.LocalPlayer
-    local seasonCfg={}
-    local seasonNames={[0]="Zero",[1]="Warp",[2]="Polar",[3]="Fame"}
-    local seasonByName={Zero=0,Warp=1,Polar=2,Fame=3}
-    local seasonLib,seasonOriginal,seasonReplacement,fighterController
-    local seasonRecords=setmetatable({}, {__mode="k"})
-    local function seasonNumber(value)
-        if type(value)=="number" then return value end
-        if type(value)~="string" then return nil end
-        return seasonByName[value] or tonumber(value:match("^Season (%d+)$")) or tonumber(value)
-    end
-    local function resolveSeasonLibrary()
-        if seasonLib then return seasonLib end
-        local ok,result=pcall(function()
-            local modules=ReplicatedStorage:FindFirstChild("Modules")
-            local module=modules and modules:FindFirstChild("SeasonLibrary")
-            if module then return require(module) end
-        end)
-        if ok and type(result)=="table" then seasonLib=result end
-        return seasonLib
-    end
-    local function seasonRankProfile(index)
-        local lib=resolveSeasonLibrary()
-        local season=lib and lib.Seasons and lib.Seasons[seasonNames[index]]
-        return season and season.RankProfile
-    end
-    local function resolveRankName(index,rank)
-        local profile=seasonRankProfile(index)
-        if not profile or type(profile.Ranks)~="table" then return nil end
-        if profile.Ranks[rank] then return rank end
-        local normalized=tostring(rank):lower():gsub("[^%a]","")
-        for name in pairs(profile.Ranks) do
-            if tostring(name):lower():gsub("[^%a]","")==normalized then return name end
-        end
-        return nil
-    end
-    local function seasonMetadata(value)
-        local index=seasonNumber(value)
-        local cfg=index~=nil and seasonCfg[index] or nil
-        if not cfg or not cfg.enabled then return nil end
-        local profile=seasonRankProfile(index)
-        local rank=profile and profile.Ranks and profile.Ranks[cfg.rankName]
-        if not rank then return nil end
-        return {SeasonELO=rank.RequiredELO,SeasonLeaderboardRank=rank.RequiredELOLeaderboardRanking and cfg.rank or nil}
-    end
-    local function recordSeasonCharm(model,season,elo,arch,hasNativeData)
-        local saved=seasonRecords[model]
-        if saved then return saved end
-        saved={season=season,elo=elo,arch=arch,native=hasNativeData,labels={}}
-        local extra=model:FindFirstChild("Extra")
-        saved.extra=extra and extra:Clone()
-        for _,object in ipairs(model:GetDescendants()) do
-            if object:HasTag("CharmLeaderboardRank") then
-                pcall(function() saved.labels[object]=object.Text end)
-            end
-        end
-        seasonRecords[model]=saved
-        return saved
-    end
-    local function restoreCharmRankGeometry(model,season,md)
-        if not seasonLib or type(seasonLib.GetRank)~="function" then return end
-        local profile=seasonLib.Seasons and seasonLib.Seasons[season]
-        if not profile or not profile.RankProfile then return end
-        local ok,rank=pcall(seasonLib.GetRank,seasonLib,md.SeasonELO,nil,md.SeasonLeaderboardRank or math.huge,profile.RankProfile.Name)
-        if not ok or type(rank)~="string" then return end
-        local extra=model:FindFirstChild("Extra")
-        if not extra or extra:FindFirstChild(rank) then return end
-        local scripts=LocalPlayer and LocalPlayer:FindFirstChild("PlayerScripts")
-        local assets=scripts and scripts:FindFirstChild("Assets")
-        local charms=assets and assets:FindFirstChild("Charms")
-        local template=charms and charms:FindFirstChild(model.Name)
-        local source=template and template:FindFirstChild("Extra")
-        local shape=source and source:FindFirstChild(rank)
-        if shape then shape:Clone().Parent=extra end
-    end
-    local function resolveFighterController()
-        if fighterController then return fighterController end
-        pcall(function()
-            local scripts=LocalPlayer:FindFirstChild("PlayerScripts")
-            local controllers=scripts and scripts:FindFirstChild("Controllers")
-            local module=controllers and controllers:FindFirstChild("FighterController")
-            if module then fighterController=require(module) end
-        end)
-        return fighterController
-    end
-    local function equippedViewmodelRoot()
-        local controller=resolveFighterController()
-        if not controller then return nil end
-        local fighter=controller.LocalFighter
-        if not fighter and type(controller.GetFighter)=="function" then
-            pcall(function() fighter=controller:GetFighter(LocalPlayer) end)
-        end
-        local item=fighter and fighter.EquippedItem
-        local vm=item and item.ViewModel
-        return vm and (vm.Model or vm._model) or nil
-    end
-    local function installSeasonHook()
-        local lib=resolveSeasonLibrary()
-        if not lib then return false end
-        if seasonReplacement and lib.FormatSeasonRankCharm==seasonReplacement then return true end
-        if type(lib.FormatSeasonRankCharm)~="function" then return false end
-        seasonOriginal=lib.FormatSeasonRankCharm
-        local original=seasonOriginal
-        local replacement=function(self,model,season,elo,arch,...)
-            local md=seasonMetadata(season)
-            if md and typeof(model)=="Instance" then
-                if not seasonRecords[model] then recordSeasonCharm(model,season,elo,arch,true) end
-                restoreCharmRankGeometry(model,season,md)
-                elo,arch=md.SeasonELO,md.SeasonLeaderboardRank
-            end
-            return original(self,model,season,elo,arch,...)
-        end
-        local ok=pcall(function() lib.FormatSeasonRankCharm=replacement end)
-        if ok and lib.FormatSeasonRankCharm==replacement then
-            seasonReplacement=replacement
-            return true
-        end
-        return false
-    end
-    local function restoreSeasonCharm(model,saved)
-        if typeof(model)=="Instance" and model.Parent then
-            if saved.extra then
-                local extra=model:FindFirstChild("Extra")
-                if extra then extra:Destroy() end
-                saved.extra.Parent=model
-                saved.extra=nil
-            end
-            for label,value in pairs(saved.labels or {}) do
-                if label.Parent then pcall(function()label.Text=value end) end
-            end
-            if saved.native and type(seasonOriginal)=="function" then
-                pcall(seasonOriginal,seasonLib,model,saved.season,saved.elo,saved.arch)
-            end
-        end
-        if saved.extra then saved.extra:Destroy() end
-    end
-    local function restoreSeasonCharms()
-        for model,saved in pairs(seasonRecords) do restoreSeasonCharm(model,saved) end
-        table.clear(seasonRecords)
-    end
-    local function refreshSeasonCharms()
-        if not installSeasonHook() then return end
-        if type(seasonOriginal)~="function" then return end
-        for model,saved in pairs(seasonRecords) do
-            if typeof(model)=="Instance" and model.Parent then
-                local md=seasonMetadata(saved.season)
-                if md then
-                    restoreCharmRankGeometry(model,saved.season,md)
-                    local ok,err=pcall(seasonOriginal,seasonLib,model,saved.season,md.SeasonELO,md.SeasonLeaderboardRank)
-                    if not ok then warn("[Gumball Charm] Format: "..tostring(err)) end
-                else
-                    restoreSeasonCharm(model,saved)
-                    seasonRecords[model]=nil
-                end
-            else
-                restoreSeasonCharm(model,saved)
-                seasonRecords[model]=nil
-            end
-        end
-        local roots={equippedViewmodelRoot(),workspace.CurrentCamera,LocalPlayer.Character}
-        local seen=setmetatable({}, {__mode="k"})
-        local function restyle(model)
-            if typeof(model)~="Instance" or not model:IsA("Model") or seen[model] then return end
-            seen[model]=true
-            local index=seasonNumber(model.Name)
-            if index==nil then return end
-            local md=seasonMetadata(index)
-            if not md then return end
-            local saved=seasonRecords[model]
-            local season=saved and saved.season or seasonNames[index]
-            if not saved then recordSeasonCharm(model,season,nil,nil,false) end
-            restoreCharmRankGeometry(model,season,md)
-            local ok,err=pcall(seasonOriginal,seasonLib,model,season,md.SeasonELO,md.SeasonLeaderboardRank)
-            if not ok then warn("[Gumball Charm] Format: "..tostring(err)) end
-        end
-        for _,root in ipairs(roots) do
-            if typeof(root)=="Instance" then
-                restyle(root)
-                for _,model in ipairs(root:GetDescendants()) do restyle(model) end
-            end
-        end
-    end
-    for i=0,3 do seasonCfg[i]={enabled=false,rankName="Nemesis",rank=1} end
-    local function setRankedCharm(index,rank,top,enabled)
-        if not seasonCfg[index] then return false,"Unknown season" end
-        local rankName=resolveRankName(index,rank)
-        if enabled and not rankName then return false,"Rank not available in Season "..index..": "..tostring(rank) end
-        for i=0,3 do seasonCfg[i].enabled=false end
-        restoreSeasonCharms()
-        if enabled then
-            seasonCfg[index]={enabled=true,rankName=rankName,rank=math.clamp(math.floor(tonumber(top) or 1),1,200)}
-            refreshSeasonCharms()
-        end
-        return true
-    end
-    tbl17._InitCharmSpoof=function(store)
-        local function apply()
-            local data=store and store.Data and store.Data.CharmSpoof
-            if not data or not data.Enabled then
-                for i=0,3 do seasonCfg[i].enabled=false end
-                restoreSeasonCharms()
-                return
-            end
-            local index=seasonNumber(data.Season) or 0
-            local ok,reason=setRankedCharm(index,data.Rank or "Nemesis",data.Placement,true)
-            if not ok then warn("[Gumball Charm] "..tostring(reason)) end
-        end
-        for _,field in ipairs({"Enabled","Season","Rank","Placement"}) do
-            local ok,signal=pcall(function()return store:GetPropertyChangedSignal({"CharmSpoof",field})end)
-            if ok and signal then signal:Connect(function()
-                local success,err=pcall(apply)
-                if not success then warn("[Gumball Charm] Update: "..tostring(err)) end
-            end) end
-        end
-        task.defer(function()
-            local ok,err=pcall(apply)
-            if not ok then warn("[Gumball Charm] Init: "..tostring(err)) end
-            while task.wait(1) do
-                local data=store and store.Data and store.Data.CharmSpoof
-                if data and data.Enabled then
-                    local success,why=pcall(refreshSeasonCharms)
-                    if not success then warn("[Gumball Charm] Refresh: "..tostring(why)) end
-                end
-            end
-        end)
-    end
-end)()
 
 do -- jj
 local function fn35()
@@ -67402,7 +67611,12 @@ local reserve = v235.Reserve
 local v236 = v147:Add(tbl17.j_().new(v199, v191, v202, v208, reserve(v235, { "DataValueChanged" })))
 local v237 = v147:Add(v128.new(v199, v190, v197, v193, v192:Reserve(), v215))
 local v238 = v147:Add(v129.new(v237))
-v188:ReportResult(v238:LoadCoreConfig())
+local coreLoad = v238:LoadCoreConfig()
+if not coreLoad.Ok and isfile and not isfile("kiciahook/rivals_v3/cosmetics/states/core_config.json") then
+v238:SaveCoreConfig() -- first run: write the default core config instead of warning
+else
+v188:ReportResult(coreLoad)
+end
 local v239 = v147:Add(v146.new())
 
 v239:SetPreCameraRender(function(arg2)
@@ -67533,6 +67747,7 @@ local LITHIUM_LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAACZv0lEQV
 --  anti-cheat bypass (b7). Kicia's online user service (eZ) is offline.
 --==========================================================================
 local GlobalTrove = tbl17.n()
+tbl17.w().ensureStorageDirectories("kiciahook/rivals_v3/cosmetics/states")
 tbl17.w().ensureStorageDirectories("kiciarebuild/rivals")
 tbl17.w().ensureStorageDirectories("kiciarebuild/fonts")
 tbl17.w().ensureStorageDirectories("kiciarebuild/cache")
@@ -68184,7 +68399,6 @@ end
 
 local boot = (function()
     local store = tbl17.bG()
-    if tbl17._InitCharmSpoof then tbl17._InitCharmSpoof(store) end
     local profiles = GlobalTrove:Add(tbl17.bN().new(store))
     store:UseMiddleware(profiles)
     local fonts = tbl17.az()
@@ -68259,3 +68473,12 @@ function K.Unload()
 end
 
 tbl17.j1()(boot)
+
+-- A successful return from the main initializer is the script-load milestone.
+-- Only send user identity fields when the player has explicitly opted in.
+do
+    local env = (type(getgenv) == "function" and getgenv()) or _G
+    if type(env.GumballReportUserLoaded) == "function" then
+        pcall(env.GumballReportUserLoaded)
+    end
+end
