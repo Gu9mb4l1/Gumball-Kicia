@@ -1,7 +1,10 @@
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print("       PROJECT GUMBALL")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
+
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 -- Project Gumball Kicia: error diagnostics and private script-load telemetry.
 -- PRIVATE BUILD: both webhook destinations are preconfigured; no setup needed.
@@ -38944,8 +38947,6 @@ local function fn37(original, finisherRig)
         table.clear(hiddenBodies)
     end
 
-    watchBody(original)
-
     -- Some Rivals death effects create a separate ragdoll model after the
     -- finisher event. Only match a dead player's own name near the hit site,
     -- never the finisher rig itself or the player's respawned character.
@@ -38970,15 +38971,17 @@ local function fn37(original, finisherRig)
         end))
     end
 
-    -- Run just before rendering so a late ragdoll/transparency reset cannot
-    -- flash into view. Only the already identified dead-body models are read.
-    table.insert(connections, _RunService.PreRender:Connect(function()
+    -- Hide the defeated model's rendered corpse, without touching the clone.
+    -- This listener uses Roblox's own RunService, not an undefined global.
+    local runService = game:GetService("RunService")
+    table.insert(connections, runService.RenderStepped:Connect(function()
         for body in pairs(hiddenBodies) do
             if body.Parent ~= nil then concealAll(body) end
         end
     end))
     table.insert(connections, finisherRig.Destroying:Connect(stop))
     task.delay(12, stop) -- fail-safe cleanup if the effect never destroys its rig
+    watchBody(original) -- conceal only after the listeners are ready
 end
 
 -- Freeze-style finishers should preserve the victim's current pose rather
@@ -39040,12 +39043,12 @@ local function fn38(arg, arg2, arg3, arg4, arg5, arg6, arg7, finisherName)
 local humanoid = arg:FindFirstChildOfClass("Humanoid")
 if humanoid == nil then
 arg:Destroy()
-return
+return false
 end
 local humanoidRootPart = arg:FindFirstChild("HumanoidRootPart")
 if humanoidRootPart == nil then
 arg:Destroy()
-return
+return false
 end
 humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
 local preservePose = isPoseFreezeFinisher(finisherName)
@@ -39093,6 +39096,7 @@ end)
 task.spawn(v107, v122.PlayServer, v122)
 task.spawn(v107, v122.PlayClient, v122)
 setthreadidentity(v120)
+return true
 end
 
 local index2 = {}
@@ -39153,10 +39157,31 @@ return fn39()
 end
 local v125 = getthreadidentity()
 setthreadidentity(2)
-local module = require(v123)
+local loaded, module = pcall(require, v123)
 setthreadidentity(v125)
-fn37(model, v124)
-fn38(v124, model, module, arg4, arg5, arg6, arg2, finisher)
+if not loaded then
+    pcall(function() v124:Destroy() end)
+    return fn39()
+end
+local started, ready = pcall(fn38, v124, model, module, arg4, arg5, arg6, arg2, finisher)
+-- fn38 switches thread identity while creating the effect; restore it if
+-- an exception interrupted that sequence.
+pcall(setthreadidentity, v125)
+if not started or ready ~= true then
+    pcall(function() v124:Destroy() end)
+    return fn39()
+end
+-- The finisher is now initialized. Concealing the old death model must never
+-- interrupt the already-created finisher or trigger a second playback.
+local hiddenOK, hiddenError = pcall(fn37, model, v124)
+if not hiddenOK then
+    local environment = type(getgenv) == "function" and getgenv() or _G
+    if environment and type(environment.GumballReportError) == "function" then
+        pcall(environment.GumballReportError,
+            "Finisher visibility setup: " .. tostring(hiddenError),
+            "Cosmetics / Finisher")
+    end
+end
 return nil
 end)
 
