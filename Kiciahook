@@ -1,11 +1,8 @@
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print("       PROJECT GUMBALL")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
-
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 -- Project Gumball Kicia: error diagnostics and private script-load telemetry.
 -- PRIVATE BUILD: both webhook destinations are preconfigured; no setup needed.
 -- Private distribution notice: script loads send Roblox username, display name, User ID and UTC time to admins. Inform all recipients.
@@ -34654,8 +34651,7 @@ local v118 = tbl17.b3()
 local localPlayer = cloneref(game:GetService("Players")).LocalPlayer
 
 local function fn36()
-local starts = v102(mechanicsController, "_quick_attack_down_starts")
-return type(starts) == "table" and starts.Melee or nil
+return v102(mechanicsController, "_quick_attack_down_starts").Melee
 end
 
 local index2 = {}
@@ -36500,19 +36496,7 @@ local function fn36(arg, arg2)
 local v116 = v115(v115(getmetatable(arg), "__index"), arg2)
 
 return function()
--- The game's Lobby.Buttons refresh can run while its Fame data is absent.
--- Keep the other equipment / viewmodel refreshers running in that case.
-if arg2 == "_UpdateButtonInformation" then
-    local ok, err = pcall(v116, arg)
-    if not ok then
-        if tostring(err):find("attempt to index nil with 'Fame'", 1, true) then
-            return -- Let the game populate Fame before its next UI refresh.
-        end
-        error(err, 0) -- Preserve unexpected errors for the error reporter.
-    end
-else
-    coroutine.wrap(v116)(arg)
-end
+coroutine.wrap(v116)(arg)
 end
 end
 
@@ -38895,164 +38879,30 @@ local equippedItem = v120 ~= nil and v120.ItemObserver:GetEquippedItem()
 return equippedItem and equippedItem.Name or nil
 end
 
--- Keep the ORIGINAL defeated character hidden for the whole finisher.
--- The game can reset transparency or create a late corpse after the initial
--- hide call, leaving a second, falling body beside the finisher's display rig.
--- This masks only the defeated character and clearly matched death copies;
--- it never moves, anchors, or changes the finisher animation rig.
-local function fn37(original, finisherRig)
-    local connections = {}
-    local hiddenBodies = {}
-    local stopped = false
-    local started = os.clock()
-    local owner = v118:GetPlayerFromCharacter(original)
-    local originalName = original.Name
-    local origin = original:GetPivot().Position
-
-    local function conceal(inst)
-        if inst:IsA("BasePart") then
-            if inst.Transparency ~= 1 then inst.Transparency = 1 end
-            if inst.LocalTransparencyModifier ~= 1 then
-                inst.LocalTransparencyModifier = 1
-            end
-        elseif inst:IsA("Decal") or inst:IsA("Texture") then
-            if inst.Transparency ~= 1 then inst.Transparency = 1 end
-        elseif inst:IsA("BillboardGui") or inst:IsA("SurfaceGui") then
-            if inst.Enabled then inst.Enabled = false end
-        end
-    end
-
-    local function concealAll(model)
-        for _, descendant in ipairs(model:GetDescendants()) do
-            conceal(descendant)
-        end
-    end
-
-    local function watchBody(model)
-        if stopped or hiddenBodies[model] or model == finisherRig then return end
-        hiddenBodies[model] = true
-        concealAll(model)
-        table.insert(connections, model.DescendantAdded:Connect(function(descendant)
-            if not stopped then conceal(descendant) end
-        end))
-    end
-
-    local function stop()
-        if stopped then return end
-        stopped = true
-        for _, connection in ipairs(connections) do
-            connection:Disconnect()
-        end
-        table.clear(connections)
-        table.clear(hiddenBodies)
-    end
-
-    -- Some Rivals death effects create a separate ragdoll model after the
-    -- finisher event. Only match a dead player's own name near the hit site,
-    -- never the finisher rig itself or the player's respawned character.
-    if owner ~= nil then
-        local function maybeHideDeathCopy(model)
-            if stopped or hiddenBodies[model] or model == finisherRig
-                or model == original or model == owner.Character then return end
-            if not model:IsA("Model") or not model:IsDescendantOf(workspace) then return end
-            if model.Name ~= owner.Name and model.Name ~= originalName then return end
-            local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-            if root == nil or not root:IsA("BasePart") then return end
-            if (root.Position - origin).Magnitude > 14 then return end
-            watchBody(model)
-        end
-
-        table.insert(connections, workspace.DescendantAdded:Connect(function(descendant)
-            if stopped or os.clock() - started > 4 then return end
-            if not descendant:IsA("Model") then return end
-            if descendant.Name ~= owner.Name and descendant.Name ~= originalName then return end
-            task.defer(maybeHideDeathCopy, descendant)
-            task.delay(0.15, maybeHideDeathCopy, descendant)
-        end))
-    end
-
-    -- Hide the defeated model's rendered corpse, without touching the clone.
-    -- This listener uses Roblox's own RunService, not an undefined global.
-    local runService = game:GetService("RunService")
-    table.insert(connections, runService.RenderStepped:Connect(function()
-        for body in pairs(hiddenBodies) do
-            if body.Parent ~= nil then concealAll(body) end
-        end
-    end))
-    table.insert(connections, finisherRig.Destroying:Connect(stop))
-    task.delay(12, stop) -- fail-safe cleanup if the effect never destroys its rig
-    watchBody(original) -- conceal only after the listeners are ready
+local function fn37(arg)
+for _, v120 in arg:GetDescendants() do
+if v120:IsA("BasePart") then
+v120.Transparency = 1
+elseif v120:IsA("Decal") then
+v120:Destroy()
+elseif v120:IsA("BillboardGui") then
+v120.Enabled = false
+end
+end
 end
 
--- Freeze-style finishers should preserve the victim's current pose rather
--- than the neutral pose from the prebuilt finisher clone.
-local function isPoseFreezeFinisher(name)
-    if type(name) ~= "string" then return false end
-    local n = name:lower()
-    return n:find("diamond hands", 1, true) ~= nil
-        or n:find("diamondhands", 1, true) ~= nil
-        or n:find("freeze", 1, true) ~= nil
-        or n:find("frozen", 1, true) ~= nil
-        or n:find("statue", 1, true) ~= nil
-        or n:find("petrif", 1, true) ~= nil
-end
-
-local function preserveDeathPose(clone, source)
-    if not clone or not source then return end
-    -- Match descendants by their full relative path so accessory handles
-    -- do not get confused with similarly named body parts.
-    for _, dst in ipairs(clone:GetDescendants()) do
-        if dst:IsA("BasePart") or dst:IsA("Motor6D") then
-            local names = {}
-            local node = dst
-            while node and node ~= clone do
-                table.insert(names, 1, node.Name)
-                node = node.Parent
-            end
-            if node == clone then
-                local original = source
-                for _, name in ipairs(names) do
-                    original = original and original:FindFirstChild(name)
-                end
-                if original and original.ClassName == dst.ClassName then
-                    pcall(function()
-                        if dst:IsA("Motor6D") then
-                            dst.C0 = original.C0
-                            dst.C1 = original.C1
-                            dst.Transform = original.Transform
-                        else
-                            dst.CFrame = original.CFrame
-                        end
-                    end)
-                end
-            end
-        end
-    end
-    -- Anchoring the freeze-only duplicate holds the exact hit pose rather
-    -- than allowing gravity / a dead humanoid to straighten its limbs.
-    for _, part in ipairs(clone:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.AssemblyLinearVelocity = Vector3.zero
-            part.AssemblyAngularVelocity = Vector3.zero
-            part.Anchored = true
-        end
-    end
-end
-
-local function fn38(arg, arg2, arg3, arg4, arg5, arg6, arg7, finisherName)
+local function fn38(arg, arg2, arg3, arg4, arg5, arg6, arg7)
 local humanoid = arg:FindFirstChildOfClass("Humanoid")
 if humanoid == nil then
 arg:Destroy()
-return false
+return
 end
 local humanoidRootPart = arg:FindFirstChild("HumanoidRootPart")
 if humanoidRootPart == nil then
 arg:Destroy()
-return false
+return
 end
 humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
-local preservePose = isPoseFreezeFinisher(finisherName)
-if preservePose then humanoid.BreakJointsOnDeath = false end
 humanoid.Health = 0
 local tbl18 = {}
 
@@ -39073,7 +38923,6 @@ end
 end
 
 arg:PivotTo(arg2:GetPivot())
-if preservePose then preserveDeathPose(arg, arg2) end
 arg.Parent = arg2.Parent
 local v120 = getthreadidentity()
 setthreadidentity(v86[56])
@@ -39096,7 +38945,6 @@ end)
 task.spawn(v107, v122.PlayServer, v122)
 task.spawn(v107, v122.PlayClient, v122)
 setthreadidentity(v120)
-return true
 end
 
 local index2 = {}
@@ -39157,31 +39005,10 @@ return fn39()
 end
 local v125 = getthreadidentity()
 setthreadidentity(2)
-local loaded, module = pcall(require, v123)
+local module = require(v123)
 setthreadidentity(v125)
-if not loaded then
-    pcall(function() v124:Destroy() end)
-    return fn39()
-end
-local started, ready = pcall(fn38, v124, model, module, arg4, arg5, arg6, arg2, finisher)
--- fn38 switches thread identity while creating the effect; restore it if
--- an exception interrupted that sequence.
-pcall(setthreadidentity, v125)
-if not started or ready ~= true then
-    pcall(function() v124:Destroy() end)
-    return fn39()
-end
--- The finisher is now initialized. Concealing the old death model must never
--- interrupt the already-created finisher or trigger a second playback.
-local hiddenOK, hiddenError = pcall(fn37, model, v124)
-if not hiddenOK then
-    local environment = type(getgenv) == "function" and getgenv() or _G
-    if environment and type(environment.GumballReportError) == "function" then
-        pcall(environment.GumballReportError,
-            "Finisher visibility setup: " .. tostring(hiddenError),
-            "Cosmetics / Finisher")
-    end
-end
+fn37(model)
+fn38(v124, model, module, arg4, arg5, arg6, arg2)
 return nil
 end)
 
