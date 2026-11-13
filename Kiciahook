@@ -1,8 +1,8 @@
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print("       PROJECT GUMBALL")
 print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 -- Project Gumball Kicia: error diagnostics and private script-load telemetry.
 -- PRIVATE BUILD: both webhook destinations are preconfigured; no setup needed.
 -- Private distribution notice: script loads send Roblox username, display name, User ID and UTC time to admins. Inform all recipients.
@@ -38892,16 +38892,93 @@ local equippedItem = v120 ~= nil and v120.ItemObserver:GetEquippedItem()
 return equippedItem and equippedItem.Name or nil
 end
 
-local function fn37(arg)
-for _, v120 in arg:GetDescendants() do
-if v120:IsA("BasePart") then
-v120.Transparency = 1
-elseif v120:IsA("Decal") then
-v120:Destroy()
-elseif v120:IsA("BillboardGui") then
-v120.Enabled = false
-end
-end
+-- Keep the ORIGINAL defeated character hidden for the whole finisher.
+-- The game can reset transparency or create a late corpse after the initial
+-- hide call, leaving a second, falling body beside the finisher's display rig.
+-- This masks only the defeated character and clearly matched death copies;
+-- it never moves, anchors, or changes the finisher animation rig.
+local function fn37(original, finisherRig)
+    local connections = {}
+    local hiddenBodies = {}
+    local stopped = false
+    local started = os.clock()
+    local owner = v118:GetPlayerFromCharacter(original)
+    local originalName = original.Name
+    local origin = original:GetPivot().Position
+
+    local function conceal(inst)
+        if inst:IsA("BasePart") then
+            if inst.Transparency ~= 1 then inst.Transparency = 1 end
+            if inst.LocalTransparencyModifier ~= 1 then
+                inst.LocalTransparencyModifier = 1
+            end
+        elseif inst:IsA("Decal") or inst:IsA("Texture") then
+            if inst.Transparency ~= 1 then inst.Transparency = 1 end
+        elseif inst:IsA("BillboardGui") or inst:IsA("SurfaceGui") then
+            if inst.Enabled then inst.Enabled = false end
+        end
+    end
+
+    local function concealAll(model)
+        for _, descendant in ipairs(model:GetDescendants()) do
+            conceal(descendant)
+        end
+    end
+
+    local function watchBody(model)
+        if stopped or hiddenBodies[model] or model == finisherRig then return end
+        hiddenBodies[model] = true
+        concealAll(model)
+        table.insert(connections, model.DescendantAdded:Connect(function(descendant)
+            if not stopped then conceal(descendant) end
+        end))
+    end
+
+    local function stop()
+        if stopped then return end
+        stopped = true
+        for _, connection in ipairs(connections) do
+            connection:Disconnect()
+        end
+        table.clear(connections)
+        table.clear(hiddenBodies)
+    end
+
+    watchBody(original)
+
+    -- Some Rivals death effects create a separate ragdoll model after the
+    -- finisher event. Only match a dead player's own name near the hit site,
+    -- never the finisher rig itself or the player's respawned character.
+    if owner ~= nil then
+        local function maybeHideDeathCopy(model)
+            if stopped or hiddenBodies[model] or model == finisherRig
+                or model == original or model == owner.Character then return end
+            if not model:IsA("Model") or not model:IsDescendantOf(workspace) then return end
+            if model.Name ~= owner.Name and model.Name ~= originalName then return end
+            local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+            if root == nil or not root:IsA("BasePart") then return end
+            if (root.Position - origin).Magnitude > 14 then return end
+            watchBody(model)
+        end
+
+        table.insert(connections, workspace.DescendantAdded:Connect(function(descendant)
+            if stopped or os.clock() - started > 4 then return end
+            if not descendant:IsA("Model") then return end
+            if descendant.Name ~= owner.Name and descendant.Name ~= originalName then return end
+            task.defer(maybeHideDeathCopy, descendant)
+            task.delay(0.15, maybeHideDeathCopy, descendant)
+        end))
+    end
+
+    -- Run just before rendering so a late ragdoll/transparency reset cannot
+    -- flash into view. Only the already identified dead-body models are read.
+    table.insert(connections, _RunService.PreRender:Connect(function()
+        for body in pairs(hiddenBodies) do
+            if body.Parent ~= nil then concealAll(body) end
+        end
+    end))
+    table.insert(connections, finisherRig.Destroying:Connect(stop))
+    task.delay(12, stop) -- fail-safe cleanup if the effect never destroys its rig
 end
 
 -- Freeze-style finishers should preserve the victim's current pose rather
@@ -39078,7 +39155,7 @@ local v125 = getthreadidentity()
 setthreadidentity(2)
 local module = require(v123)
 setthreadidentity(v125)
-fn37(model)
+fn37(model, v124)
 fn38(v124, model, module, arg4, arg5, arg6, arg2, finisher)
 return nil
 end)
