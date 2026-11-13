@@ -1,8 +1,8 @@
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print("       PROJECT GUMBALL")
 print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 -- Project Gumball Kicia: error diagnostics and private script-load telemetry.
 -- PRIVATE BUILD: both webhook destinations are preconfigured; no setup needed.
 -- Private distribution notice: script loads send Roblox username, display name, User ID and UTC time to admins. Inform all recipients.
@@ -269,7 +269,10 @@ do
                 local executorLine = msg:match("^%s*:(%d+):")
                 local anonymousStack = msg:find("Script '', Line", 1, true) ~= nil
                 if msg:find("Gumball", 1, true) or msg:find("Kicia", 1, true) or
-                    msg:find("FighterController", 1, true) or executorLine or anonymousStack then
+                    msg:find("FighterController", 1, true) or
+                    msg:find("lacking capability Plugin", 1, true) or
+                    msg:find("attempt to index nil with 'Melee'", 1, true) or
+                    executorLine or anonymousStack then
                     local location = executorLine and ("Executor script, line " .. executorLine) or
                         (anonymousStack and "Executor script traceback" or nil)
                     sendError(msg, location, false)
@@ -368,6 +371,16 @@ K.hudParent = hudParent
 
 function K.track(c) K.connections[#K.connections + 1] = c return c end
 function K.onUnload(f) K.cleanups[#K.cleanups + 1] = f end
+-- Catch a rejected UI operation without printing another console error.
+-- The Error Reporter handles deduplication, redaction and delivery.
+function K.reportGuardedError(message, location)
+    local ok, reporter = pcall(function()
+        return getgenv().GumballReportError
+    end)
+    if ok and type(reporter) == "function" then
+        pcall(reporter, tostring(message), location or "UI update")
+    end
+end
 
 --==========================================================================
 --  Signal / Trove (Kicia's own small versions)
@@ -1423,14 +1436,28 @@ if not v119.Ok then
 return v119
 end
 local v120 = arg:_ConfigPath(arg2)
-if arg4 and isfile(v120) then
-return v115.err("ConfigManager", "SaveImpl", string.format("path `%s` already exists", tostring(v120)))
+if arg4 then
+    local okCheck, exists = pcall(function()
+        return type(isfile) == "function" and isfile(v120)
+    end)
+    if not okCheck then
+        return v115.err("ConfigManager", "SaveImpl", "could not check existing config file: " .. tostring(exists))
+    end
+    if exists then
+        return v115.err("ConfigManager", "SaveImpl", string.format("path `%s` already exists", tostring(v120)))
+    end
 end
 local v121 = arg:ToJson(arg3)
 if not v121.Ok then
-return v115.err("ConfigManager", "SaveImpl", v121.Error.Detail)
+    return v115.err("ConfigManager", "SaveImpl", v121.Error.Detail)
 end
-writefile(v120, v121.Value)
+if type(writefile) ~= "function" then
+    return v115.err("ConfigManager", "SaveImpl", "executor file write support is unavailable")
+end
+local written, writeError = pcall(writefile, v120, v121.Value)
+if not written then
+    return v115.err("ConfigManager", "SaveImpl", "failed to write config: " .. tostring(writeError))
+end
 return v115.VoidOk
 end
 
@@ -1481,14 +1508,17 @@ if arg._savePath == "" then
 return tbl18
 end
 
-for _, v119 in listfiles(arg._savePath) do
-if isfile(v119) then
-local match = (v119:match("[/\\]([^/\\]+)$") or v119):match("(.+)%.json$")
-
-if match ~= nil then
-table.insert(tbl18, match)
-end
-end
+if type(listfiles) ~= "function" then return tbl18 end
+local listOk, files = pcall(listfiles, arg._savePath)
+if not listOk or type(files) ~= "table" then return tbl18 end
+for _, v119 in ipairs(files) do
+    if type(v119) == "string" then
+        local fileOk, isRegular = pcall(function() return type(isfile) == "function" and isfile(v119) end)
+        if fileOk and isRegular then
+            local match = (v119:match("[/\\]([^/\\]+)$") or v119):match("(.+)%.json$")
+            if match ~= nil then table.insert(tbl18, match) end
+        end
+    end
 end
 
 return tbl18
@@ -7263,10 +7293,15 @@ local featureEnabled = arg.ShowInList and arg.FeatureEnabled
 local hud = arg._hud
 
 if hud ~= nil then
-hud:SetKeyText(fn36(arg.Value.Key))
-hud:SetMode(arg.Value.Mode)
-hud:SetActiveAppearance(active)
-hud:SetEnabled(featureEnabled)
+local hudOK, hudError = pcall(function()
+    hud:SetKeyText(fn36(arg.Value.Key))
+    hud:SetMode(arg.Value.Mode)
+    hud:SetActiveAppearance(active)
+    hud:SetEnabled(featureEnabled)
+end)
+if not hudOK then
+    K.reportGuardedError(hudError, "Keybind HUD update")
+end
 end
 
 local mobile = arg._mobile
@@ -17904,11 +17939,15 @@ end
 end
 
 local function fn37(arg, arg2)
-if arg.Ok then
+if type(arg) == "table" and arg.Ok == true then
 return false
 end
-local str7 = tostring(arg.Error.Detail)
-v116.get():Notify({ { Text = arg2 .. " failed: " }, { Text = str7 } })
+local str7 = type(arg) == "table" and type(arg.Error) == "table"
+    and tostring(arg.Error.Detail) or tostring(arg)
+K.reportGuardedError(str7, "Config → " .. tostring(arg2))
+pcall(function()
+    v116.get():Notify({ { Text = arg2 .. " failed: " }, { Text = str7 } })
+end)
 return true
 end
 
@@ -17936,16 +17975,30 @@ v126:SetOptions(fn39())
 end
 
 v125:Connect(v125.Clicked, function()
-local str7 = v124.Value:gsub("%s+", "")
+-- Creating a profile must capture the CURRENT settings, not the defaults.
+local rawName = v124.Value
+local str7 = type(rawName) == "string" and rawName:match("^%s*(.-)%s*$") or ""
 if str7 == "" then
+pcall(function() v116.get():Notify("Enter a name to create a config") end)
 return
 end
-
-if fn37(persistence:CreateDefault(str7), "Creating config") then
+if persistence == nil then
+K.reportGuardedError("Config persistence unavailable", "Config → Create")
 return
 end
-fn40()
-v126:Set(str7)
+-- SaveToFile uses _PersistableData(), including currently selected settings.
+-- true means do not overwrite an existing profile on create.
+if fn37(persistence:SaveToFile(str7, true), "Creating config") then
+return
+end
+local uiOk, uiErr = pcall(function()
+    fn40()
+    v126:Set(str7)
+    v116.get():Notify("Config saved with your current settings: " .. str7)
+end)
+if not uiOk then
+    K.reportGuardedError(tostring(uiErr), "Config → Refresh list after save")
+end
 end)
 
 local v127 = v120:AddButton({ Label = "Refresh List" })
@@ -18090,7 +18143,8 @@ end
 flag19 = v86[34]
 v134:Clean()
 
-v134:Add(task.defer(function()
+-- Coalesce rapid slider/toggle edits into one write after input settles.
+v134:Add(task.delay(0.35, function()
 flag19 = false
 if stateData == nil or not stateData.AutoSave then
 return
@@ -23446,6 +23500,7 @@ end
 return affected, result, false
 end
 local function fn40(I)
+local textOK, textError = pcall(function()
 local entry = tbl18[I]
 if entry == nil or entry.Tracked == nil or not I.Parent then return end
 local tracked = entry.Tracked
@@ -23472,6 +23527,14 @@ if current ~= spoofedText then
     tracked.Updating = true
     I.Text = spoofedText
     tracked.Updating = false
+end
+end)
+if not textOK then
+    local entry = tbl18[I]
+    if entry and entry.Tracked then
+        entry.Tracked.Updating = false
+    end
+    K.reportGuardedError(textError, "Player name label update")
 end
 end
 local function fn41(I,tracked)
@@ -34651,7 +34714,8 @@ local v118 = tbl17.b3()
 local localPlayer = cloneref(game:GetService("Players")).LocalPlayer
 
 local function fn36()
-return v102(mechanicsController, "_quick_attack_down_starts").Melee
+local attackStarts = v102(mechanicsController, "_quick_attack_down_starts")
+return attackStarts and attackStarts.Melee or nil
 end
 
 local index2 = {}
@@ -47874,7 +47938,12 @@ instance.FillDirection = arg2.FillDirection
 instance.HorizontalAlignment = arg2.HorizontalAlignment
 instance.VerticalAlignment = arg2.VerticalAlignment
 instance.SortOrder = Enum.SortOrder.LayoutOrder
-instance.Wraps = true
+local wrapOK, wrapError = pcall(function()
+    instance.Wraps = true
+end)
+if not wrapOK then
+    K.reportGuardedError(wrapError, "ESP pane layout Wraps property")
+end
 instance.Parent = frame
 arg.ObjectHolder = frame
 container.Parent = parent
@@ -61142,8 +61211,12 @@ local glassActive = false
 local glassConnection
 local glassScanGeneration = 0
 local glassScanFinished = false
+local glassStreamQueue = {}
+local glassStreamWorker = false
 local glassWorkspace = game:GetService("Workspace")
 local glassPlayers = game:GetService("Players")
+-- Avoid rebuilding this table for every map part during large scans.
+local glassExcludedTokens={"viewmodel","view_model","weapon","projectile","bullet","hitbox","firstperson","first_person","npc","dummy","avatar","character","camera","trigger","collider"}
 local function isGlassWorldPart(part)
     if not part:IsA("BasePart") or not part:IsDescendantOf(glassWorkspace) then return false end
     if not part.Anchored or part.Transparency > 0.05 then return false end
@@ -61154,12 +61227,11 @@ local function isGlassWorldPart(part)
     for _,player in ipairs(glassPlayers:GetPlayers()) do
         if player.Character and part:IsDescendantOf(player.Character) then return false end
     end
-    local excluded={"viewmodel","view_model","weapon","projectile","bullet","hitbox","firstperson","first_person","npc","dummy","avatar","character","camera","trigger","collider"}
     local node=part
     while node and node~=glassWorkspace do
         if node:IsA("Model") and (node:FindFirstChildOfClass("Humanoid") or node:FindFirstChildOfClass("AnimationController")) then return false end
         local name=node.Name:lower()
-        for _,word in ipairs(excluded) do
+        for _,word in ipairs(glassExcludedTokens) do
             if name:find(word,1,true) then return false end
         end
         node=node.Parent
@@ -61211,7 +61283,7 @@ local function scheduleGlassScan()
             if not glassActive or glassReflectionStrength <= 0 or K.destroyed
                 or generation ~= glassScanGeneration then return end
             if part:IsA("BasePart") then applyGlassPart(part) end
-            if index % 100 == 0 then task.wait() end
+            if index % 40 == 0 then task.wait() end
         end
         if generation == glassScanGeneration then glassScanFinished = true end
     end)
@@ -61281,12 +61353,24 @@ local function setGlassEnabled(enabled)
         restoreGlass()
     end
     glassConnection = glassWorkspace.DescendantAdded:Connect(function(part)
-        -- Streaming often adds many non-parts; never schedule a task for those.
-        if glassActive and glassReflectionStrength > 0 and part:IsA("BasePart") then
-            task.defer(function()
-                if not K.destroyed then applyGlassPart(part) end
-            end)
-        end
+        -- One bounded worker per streaming burst instead of a task per part.
+        if not glassActive or glassReflectionStrength <= 0 or not part:IsA("BasePart") then return end
+        table.insert(glassStreamQueue, part)
+        if glassStreamWorker then return end
+        glassStreamWorker = true
+        task.defer(function()
+            local index = 1
+            while index <= #glassStreamQueue and glassActive and not K.destroyed do
+                local queuedPart = glassStreamQueue[index]
+                index += 1
+                if queuedPart and queuedPart.Parent and glassReflectionStrength > 0 then
+                    applyGlassPart(queuedPart)
+                end
+                if index % 40 == 0 then task.wait() end
+            end
+            table.clear(glassStreamQueue)
+            glassStreamWorker = false
+        end)
     end)
 end
 
@@ -61339,6 +61423,7 @@ K.onUnload(function()
     glassActive = false
     glassScanGeneration += 1
     glassScanFinished = false
+    table.clear(glassStreamQueue)
     if glassConnection then glassConnection:Disconnect(); glassConnection = nil end
     restoreGlass()
 end)
@@ -67604,10 +67689,11 @@ do
     end
 end
 
---  Kicia's error reporter needs a sink; ours prints to the F9 console.
+-- Kicia's own diagnostic sink forwards errors to the private Discord error webhook.
+-- It does not print an additional copy to Roblox's F9 console.
 tbl17.b().use({ Report = function(_, e)
     local detail = type(e) == "table" and (e.Detail or e.Operation) or e
-    warn("[Kicia Rebuild] " .. tostring(detail))
+    K.reportGuardedError("[Kicia Rebuild] " .. tostring(detail), "Kicia internal module")
 end })
 
 
