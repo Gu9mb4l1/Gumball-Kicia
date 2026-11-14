@@ -405,7 +405,7 @@ function Signal:Connect(fn)
 end
 function Signal:Once(fn)
     local c
-    c = self:Connect(function(...) c:Disconnect() fn(...) end)
+    c = self:Connect(function(...) c:Disconnect(); fn(...) end)
     return c
 end
 function Signal:Fire(...)
@@ -445,7 +445,7 @@ local function cleanItem(o)
         if disconnect then pcall(disconnect, o) end
     end
 end
-function Trove:Add(o) table.insert(self._items, o) return o end
+function Trove:Add(o) table.insert(self._items, o); return o end
 function Trove:Connect(sig, fn) return self:Add(sig:Connect(fn)) end
 function Trove:Extend() return self:Add(Trove.new(self._name)) end
 function Trove:Remove(o, keep)
@@ -866,7 +866,7 @@ do
             if writeBack then writeBack(v) else config:Set(path, v) end
         end
         trove:Connect(control.Changed, function(v)
-            if not debounce then write(v) return end
+            if not debounce then write(v); return end
             pending = v
             if scheduled then return end
             scheduled = true
@@ -17600,7 +17600,7 @@ local v121 = v120:Add(Instance.new("ScreenGui"))
 v121.IgnoreGuiInset = true
 v121.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 v121.DisplayOrder = displayOrder
-v121.Parent = gethui()
+v121.Parent = K.hudParent()
 local frame = Instance.new("Frame")
 frame.BackgroundTransparency = 1
 frame.BorderSizePixel = 0
@@ -20253,7 +20253,7 @@ return bc.c
 end
 end
 do -- bd
-local function fn35() tbl17 .o();local I= tbl17 .i().atomic;return{AutoPickupDrops={Enabled=false,Types=I({})},AutoRespawn={Enabled=false},AntiKatana={Enabled=true},SubspaceTripmines={AutoTrigger=false,TeamTrigger=false},AutoQueue={Enabled=false,Queue="1v1"},AutoVote={Enabled=false,Maps=I({})},AutoBan={Enabled=false,FirstWeapons=I({}),SecondWeapons=I({})},AutoLoadout={Enabled=false,PerMap=false,MultipleLoadouts=false,Loadouts=I({})},HackerDetector={Enabled=false,Notify=false,Color=Color3.fromRGB(250,170,70)},ModDetector={Enabled=false,Moderators=I({}),ModFriends=I({}),Color=Color3.fromRGB(250,170,70)}};end
+local function fn35() tbl17 .o();local I= tbl17 .i().atomic;return{AutoPickupDrops={Enabled=false,Types=I({})},AutoRespawn={Enabled=false},AntiKatana={Enabled=false},SubspaceTripmines={AutoTrigger=false,TeamTrigger=false},AutoQueue={Enabled=false,Queue="1v1"},AutoVote={Enabled=false,Maps=I({})},AutoBan={Enabled=false,FirstWeapons=I({}),SecondWeapons=I({})},AutoLoadout={Enabled=false,PerMap=false,MultipleLoadouts=false,Loadouts=I({})},HackerDetector={Enabled=false,Notify=false,Color=Color3.fromRGB(250,170,70)},ModDetector={Enabled=false,Moderators=I({}),ModFriends=I({}),Color=Color3.fromRGB(250,170,70)}};end
 
 tbl17.bd = function()
 local bd = tbl17.cache.bd
@@ -23426,7 +23426,7 @@ return setmetatable({ _playerIdentities = arg }, index2)
 end
 
 index2.SetEnabled = function(arg, arg2)
-if arg._restore ~= nil == arg2 then
+if (arg._restore ~= nil) == arg2 then
 return
 end
 
@@ -23665,7 +23665,7 @@ return function(arg, arg2)
 local flag19 = arg == "LocalPlayer"
 
 for _, v116 in v115:GetPlayers() do
-if v116 == localPlayer == flag19 then
+if (v116 == localPlayer) == flag19 then
 arg2(v116)
 end
 end
@@ -25418,7 +25418,7 @@ local n36 = (arg3 + n * n35) * arg5
 local n37 = (arg3 - n * n36) * n34
 local n38 = arg2 + (n35 + n36) * n34
 
-if arg2 - arg > 0 ~= n38 > arg2 then
+if (arg2 - arg > 0) ~= (n38 > arg2) then
 arg2 = n38
 else
 n37 = (arg2 - arg2) / arg5
@@ -25725,7 +25725,7 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Enabled = false
 screenGui.IgnoreGuiInset = v86[34]
 screenGui.DisplayOrder = displayOrder
-screenGui.Parent = gethui()
+screenGui.Parent = K.hudParent()
 local instance = Instance.new(v86[128])
 instance.AnchorPoint = Vector2.new(0.5, v86[101])
 instance.BorderSizePixel = 0
@@ -30959,6 +30959,14 @@ index2._Load = function(arg)
 if arg._restore ~= nil then
 return v116.VoidOk
 end
+-- Rivals Season 4 compatibility: ClientItem's legacy InputHook replaced the
+-- entire shared ReplicatedStorage upvalue with a partial table. That can break
+-- normal weapon creation/input after game updates even with other options off.
+-- Do not install this hook unless explicitly opted into the legacy behavior.
+-- AntiKatana and other handlers using this bridge are inactive by default.
+if not (type(getgenv) == "function" and getgenv().GumballAllowLegacyInputBridge == true) then
+    return v116.VoidOk
+end
 local input = v102(clientItem, "Input")
 if input == nil then
 return v116.err("InputHook", "function_lookup", "Failed to find Input in prototype")
@@ -32785,7 +32793,7 @@ if arg._isWriting or spec == nil or not spec.NullTextures then
 return
 end
 
-if arg2:IsA("Decal") then
+if arg2:IsA("Decal") or arg2:IsA("Texture") then
 local v116 = arg._snapshotByPart[arg2.Parent]
 
 if v116 ~= nil then
@@ -36959,9 +36967,9 @@ if original == nil then
 return nil
 end
 
-for _, v121 in next, original, nil do
+for inventoryIndex, v121 in next, original, nil do
 if v102(v121, "Name") == arg2 then
-return v121
+return v121, inventoryIndex
 end
 end
 
@@ -37037,7 +37045,7 @@ return v115.err("ItemDataHook", "constant_scan", "GetWeaponData constant not fou
 end
 
 v103(playerDataUtility, "GetWeaponData\0ohaio", function(arg2, arg3, arg4)
-local v122 = fn39(arg._dataHook, arg4)
+local v122, weaponInventoryIndex = fn39(arg._dataHook, arg4)
 if v122 == nil then
 return nil
 end
@@ -37060,12 +37068,12 @@ v129, v128 = arg:_ApplyRankCharmMask(v126)
 end
 
 if not (v125 or v127 or v128) then
-return v122
+return v122, weaponInventoryIndex
 end
 v129.Level = v102(v122, "Level")
 v129.Prestige = v102(v122, "Prestige")
 v129.XP = v102(v122, "XP")
-return v129
+return v129, weaponInventoryIndex
 end)
 
 return v115.VoidOk
@@ -37247,6 +37255,8 @@ local v122 = v115.new()
 local tbl18 = {
 _trove = v121,
 _isEnabled = false,
+_hooksLoaded = false,
+_rankCharm = arg3,
 _dataHook = arg,
 _errorReporter = arg4,
 _store = v122,
@@ -37264,19 +37274,29 @@ end)
 return tbl18
 end
 
+index2._SyncHooks = function(arg)
+local rankOverrides = arg._rankCharm:GetAllOverrides()
+local needsHooks = arg._isEnabled and (arg._store:IsNonEmpty() or (rankOverrides ~= nil and next(rankOverrides) ~= nil))
+if needsHooks == arg._hooksLoaded then
+return
+end
+arg._hooksLoaded = needsHooks
+if needsHooks then
+arg:_Loads()
+else
+arg:_Reverts()
+end
+end
+
 index2.SetEnabled = function(arg, isEnabled)
 if arg._isEnabled == isEnabled then
 return
 end
 arg._isEnabled = isEnabled
-
-if isEnabled then
-arg:_Loads()
-if not flag2 then
-return
-end
-else
-arg:_Reverts()
+arg:_SyncHooks()
+-- Force the updated inventory and equipment views to reread original data on disable.
+if not isEnabled then
+arg:_Refresh()
 end
 end
 
@@ -37287,6 +37307,7 @@ end
 arg._store:SetItems(arg2, arg3)
 
 if arg._isEnabled then
+arg:_SyncHooks()
 arg:_Refresh()
 end
 end
@@ -37305,15 +37326,18 @@ end
 end
 
 if arg._isEnabled then
+arg:_SyncHooks()
 arg:_Refresh()
 end
 end
 
 index2.ClearAll = function(arg, arg2)
 arg._store:ClearAll(arg2)
-
-if arg._isEnabled and arg2 == localPlayer then
+if arg._isEnabled then
+arg:_SyncHooks()
+if arg2 == localPlayer then
 arg:_Refresh()
+end
 end
 end
 
@@ -37347,6 +37371,7 @@ end
 
 index2.Destroy = function(arg)
 arg:_Reverts()
+arg._hooksLoaded = false
 arg._trove:Destroy()
 local isEnabled = arg._isEnabled or arg._store:IsNonEmpty()
 arg._isEnabled = false
@@ -39270,13 +39295,49 @@ return
 end
 v103(arg2, "Info", arg4)
 setmetatable(arg2, v125)
-local v126 = debug.getstack(2, v86[63])
-
-if type(v126) ~= "table" then
-v126 = debug.getstack(v86[56], 2)
+-- Season 4: stack positions can change; never index a number or nil.
+local function findViewModel(candidate)
+    if type(candidate) ~= "table" then return nil end
+    local first = rawget(candidate, 1)
+    for index = 1, 2 do
+        local entry = index == 1 and first or candidate
+        if type(entry) == "table" then
+            local vm = rawget(entry, "ViewModel")
+            if type(vm) == "table" then
+                local vmData = rawget(vm, v116.encode("Data"))
+                if type(vmData) == "table" then return vm end
+            end
+        end
+    end
+    return nil
 end
 
-local viewModel = v102(v126[1], "ViewModel")
+local viewModel = nil
+do
+    local ok, slot = pcall(debug.getstack, 2, v86[63])
+    if ok then viewModel = findViewModel(slot) end
+    if not viewModel then
+        ok, slot = pcall(debug.getstack, v86[56], 2)
+        if ok then viewModel = findViewModel(slot) end
+    end
+    if not viewModel then
+        for depth = 1, 6 do
+            ok, slot = pcall(debug.getstack, depth)
+            if ok and type(slot) == "table" then
+                viewModel = findViewModel(slot)
+                if not viewModel then
+                    for _, entry in pairs(slot) do
+                        viewModel = findViewModel(entry)
+                        if viewModel then break end
+                    end
+                end
+            end
+            if viewModel then break end
+        end
+    end
+end
+if not viewModel then return end
+local callbackOK, callbackError = pcall(function()
 local player = v102(v102(arg2, "ClientFighter"), "Player")
 local name = v102(arg2, "Name")
 
@@ -39316,6 +39377,14 @@ end
 
 if v129 ~= nil then
 v128[v116.encode("Charm")] = v129
+end
+end)
+if not callbackOK then
+    local env = (type(getgenv) == "function" and getgenv()) or _G
+    if not arg._warnedModelHook and type(env.GumballReportError) == "function" then
+        arg._warnedModelHook = true
+        pcall(env.GumballReportError, "[Gumball ViewModel Hook] " .. tostring(callbackError))
+    end
 end
 end,
 }
@@ -39464,17 +39533,12 @@ if arg5 ~= nil then
 arg._viewModelHook:EnsureRestoreData(arg2, arg4, data)
 end
 
-coroutine.wrap(function()
-local v118 = getthreadidentity()
-setthreadidentity(2)
-coroutine.wrap(v102(clientViewModel, "Destroy"))(viewModel)
-setthreadidentity(v118)
-end)()
-
+-- Season 4 compatibility: keep the working viewmodel alive until a replacement is ready.
 local cosmeticRestoreData
 
 if arg5 ~= nil then
-cosmeticRestoreData = v116(arg4, { Name = arg4 }, arg5, nil, function(arg6)
+-- Preserve newly added game-side item fields instead of rebuilding from Name alone.
+cosmeticRestoreData = v116(arg4, table.clone(arg._viewModelHook:GetCosmeticRestoreData(arg2, arg4) or data), arg5, nil, function(arg6)
 return arg._rankCharm:ResolveMetadata(arg6)
 end)
 else
@@ -39483,26 +39547,48 @@ end
 
 local v118 = v117({ Data = v117(cosmeticRestoreData) })
 
-local v119 = coroutine.wrap(function()
-local v119 = getthreadidentity()
+-- Create and equip the replacement before destroying the active viewmodel.
+local created, v119 = pcall(function()
+return coroutine.wrap(function()
+local previousIdentity = getthreadidentity()
 setthreadidentity(2)
-local v120 = coroutine.wrap(v102(clientItem, "_CreateViewModel"))(arg3, v118)
-setthreadidentity(v119)
-return v120
+local ok, newViewModel = pcall(function()
+return coroutine.wrap(v102(clientItem, "_CreateViewModel"))(arg3, v118)
+end)
+setthreadidentity(previousIdentity)
+return ok and newViewModel or nil
 end)()
+end)
 
-if v119 == nil then
+if not created or v119 == nil or v102(v119, "Model") == nil or v102(v119, "ItemModel") == nil then
+return -- Keep original visible if updated Rivals rejects the selected skin/model.
+end
+
+local equipped = pcall(function()
+coroutine.wrap(function()
+local previousIdentity = getthreadidentity()
+setthreadidentity(2)
+local ok = pcall(function()
+coroutine.wrap(v102(clientViewModel, "Equip"))(v119, true)
+end)
+setthreadidentity(previousIdentity)
+if not ok then error("Replacement viewmodel equip failed") end
+end)()
+end)
+if not equipped or v102(arg3, "ViewModel") ~= viewModel then
+pcall(function() coroutine.wrap(v102(clientViewModel, "Destroy"))(v119) end)
 return
 end
-v103(arg3, "ViewModel", v119)
 
+pcall(function()
 coroutine.wrap(function()
-local v120 = getthreadidentity()
+local previousIdentity = getthreadidentity()
 setthreadidentity(2)
-coroutine.wrap(v102(clientViewModel, "Equip"))(v119, true)
-setthreadidentity(v120)
+pcall(function() coroutine.wrap(v102(clientViewModel, "Destroy"))(viewModel) end)
+setthreadidentity(previousIdentity)
 end)()
-
+end)
+v103(arg3, "ViewModel", v119)
 arg:_RefreshIKArmTargets(arg3)
 end
 
@@ -39672,18 +39758,12 @@ arg._viewModelHook:EnsureRestoreData(localPlayer, arg3, data)
 end
 
 local cosmeticRestoreData = arg._viewModelHook:GetCosmeticRestoreData(localPlayer, arg3)
-
-coroutine.wrap(function()
-local v123 = getthreadidentity()
-setthreadidentity(2)
-coroutine.wrap(v102(v121, "Destroy"))(viewModel)
-setthreadidentity(v123)
-end)()
-
+-- Season 4 compatibility: do not destroy the working viewmodel before replacement.
 local v123
 
 if arg5 ~= nil then
-v123 = v119(arg3, { Name = arg3 }, arg5, nil, function(arg6)
+-- Retain any new replicated item fields required by the updated game.
+v123 = v119(arg3, table.clone(cosmeticRestoreData or data), arg5, nil, function(arg6)
 return arg._rankCharm:ResolveMetadata(arg6)
 end)
 else
@@ -39708,30 +39788,51 @@ end
 
 local v124 = v120({ Data = v120(v123) })
 
-local v125 = coroutine.wrap(function()
-local v125 = getthreadidentity()
+-- Test the model, arms and equip before committing the swap.
+local created, v125 = pcall(function()
+return coroutine.wrap(function()
+local previousIdentity = getthreadidentity()
 setthreadidentity(2)
-local v126 = coroutine.wrap(v102(v122, "_CreateViewModel"))(arg4, v124)
-setthreadidentity(v125)
-return v126
+local ok, replacement = pcall(function()
+return coroutine.wrap(v102(v122, "_CreateViewModel"))(arg4, v124)
+end)
+setthreadidentity(previousIdentity)
+return ok and replacement or nil
 end)()
+end)
 
-if v125 == nil then
+if not created or v125 == nil or v102(v125, "Model") == nil or v102(v125, "ItemModel") == nil then
+return -- Failed cosmetic replacement: original weapon remains intact.
+end
+
+local inner = arg2.Inner
+local equipped = pcall(function()
+local armValues = table.pack(coroutine.wrap(v102(v102(getmetatable(inner), "__index"), "GetArmsData"))(inner))
+coroutine.wrap(function()
+local previousIdentity = getthreadidentity()
+setthreadidentity(2)
+local ok = pcall(function()
+coroutine.wrap(v102(v121, "SetArmsData"))(v125, table.unpack(armValues, 1, armValues.n))
+coroutine.wrap(v102(v121, "Equip"))(v125, true)
+end)
+setthreadidentity(previousIdentity)
+if not ok then error("Replacement viewmodel setup failed") end
+end)()
+end)
+if not equipped or v102(arg4, "ViewModel") ~= viewModel then
+pcall(function() coroutine.wrap(v102(v121, "Destroy"))(v125) end)
 return
 end
-v103(arg4, "ViewModel", v125)
-local inner = arg2.Inner
-local v126 = table.pack(coroutine.wrap(v102(v102(getmetatable(inner), "__index"), "GetArmsData"))(inner))
 
+pcall(function()
 coroutine.wrap(function()
-local v127 = getthreadidentity()
+local previousIdentity = getthreadidentity()
 setthreadidentity(2)
-local v128 = unpack
-local n = v126.n
-coroutine.wrap(v102(v121, "SetArmsData"))(v125, v128(v126, 1, n))
-coroutine.wrap(v102(v121, "Equip"))(v125, true)
-setthreadidentity(v127)
+pcall(function() coroutine.wrap(v102(v121, "Destroy"))(viewModel) end)
+setthreadidentity(previousIdentity)
 end)()
+end)
+v103(arg4, "ViewModel", v125)
 
 local v127 = v102(v125, "_equip_spring")
 
@@ -39904,20 +40005,20 @@ end
 end
 
 index2.ClearAll = function(arg)
-for k in arg._store:GetAll(localPlayer) do
-arg._viewModelReloader:ReloadAllWithCosmetics(k)
-end
-
+-- Clear the hook's active selections first so restored viewmodels stay unmodified.
+local previousSelections = arg._store:GetAll(localPlayer)
 arg._store:SetItems(localPlayer, {})
+for itemName in previousSelections, nil, nil do
+arg._viewModelReloader:ReloadAllWithCosmetics(itemName)
+end
 end
 
 index2.UnrenderAll = function(arg)
-for k in arg._store:GetAll(localPlayer) do
-arg:Unrender(k)
-end
+arg:ClearAll()
 end
 
 index2.Unrender = function(arg, arg2)
+arg._store:ClearItem(localPlayer, arg2)
 arg._viewModelReloader:ReloadAllWithCosmetics(arg2)
 end
 
@@ -44982,7 +45083,7 @@ v129.DisplayOrder = v118.Crosshair
 v129.Enabled = false
 v129.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 v129.IgnoreGuiInset = true
-v129.Parent = gethui()
+v129.Parent = K.hudParent()
 local frame = Instance.new("Frame")
 frame.AnchorPoint = Vector2.new(0.5, 0.5)
 frame.Size = UDim2.fromOffset(0, v86[186])
@@ -47443,9 +47544,9 @@ v117.Enabled = true
 v117.IgnoreGuiInset = true
 v117.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 v117.DisplayOrder = displayOrder
-v117.Parent = gethui()
+v117.Parent = K.hudParent()
 local v118 = root:Add(Instance.new("Folder"))
-v118.Parent = gethui()
+v118.Parent = K.hudParent()
 local android = Enum.Platform.Android
 
 if v116:GetPlatform() ~= android then
@@ -53172,7 +53273,7 @@ v118.ResetOnSpawn = false
 v118.DisplayOrder = v117.CombatFeedback
 v118.ZIndexBehavior = Enum.ZIndexBehavior.Global
 local tbl18 = { _trove = sideGradientFx, _leftSide = fn38(v118, 0, 0), _rightSide = fn38(v118, 1, 1), _flashes = {} }
-v118.Parent = gethui()
+v118.Parent = K.hudParent()
 return setmetatable(tbl18, index2)
 end
 
@@ -53757,7 +53858,7 @@ local code = Enum.Font.Code
 index2.new = function(displayOrder)
 local screenGui = Instance.new("ScreenGui")
 screenGui.DisplayOrder = displayOrder
-screenGui.Parent = gethui()
+screenGui.Parent = K.hudParent()
 local instance = Instance.new(v86[128])
 instance.BackgroundTransparency = v86[63]
 instance.Interactable = false
@@ -55456,21 +55557,40 @@ local v117 = tbl17.ez()
 tbl17.g3()
 
 local function fn36(arg)
-local tbl18 = {}
-local tbl19 = {}
-local model = v102(v102(arg, "ViewModel"), "Model")
-
-for _, v118 in model:GetChildren() do
-local name = v118.Name
-
-if name == "ItemVisual" then
-table.insert(tbl18, v118)
-elseif name == "LeftArm" or name == "RightArm" then
-table.insert(tbl19, v118)
+local items = {}
+local arms = {}
+local seen = {}
+local currentVM = v102(arg, "ViewModel")
+local model = currentVM and v102(currentVM, "Model")
+if typeof(model) ~= "Instance" then
+    return { Items = items, Arms = arms }
 end
+local function add(list, node)
+    if not seen[node] then
+        seen[node] = true
+        list[#list + 1] = node
+    end
 end
-
-return { Items = tbl18, Arms = tbl19 }
+local function scan(parent, insideArms, depth)
+    if depth > 10 then return end
+    for _, node in parent:GetChildren() do
+        local n = string.lower(node.Name)
+        if n == "camera" or n == "humanoidrootpart" or n:find("charm", 1, true) then
+            -- Internal helpers are not weapon geometry.
+        elseif n == "itemvisual" then
+            add(items, node)
+        elseif n == "leftarm" or n == "rightarm"
+            or n:find("glove", 1, true) or n:find("sleeve", 1, true) then
+            add(arms, node)
+        elseif node:IsA("Model") or node:IsA("Folder") then
+            scan(node, insideArms, depth + 1)
+        elseif node:IsA("BasePart") then
+            if insideArms then add(arms, node) else add(items, node) end
+        end
+    end
+end
+scan(model, false, 0)
+return { Items = items, Arms = arms }
 end
 
 local function fn37(arg, arg2)
@@ -55809,7 +55929,7 @@ end
 tbl19:_SetEnabled(v121, data.ViewModelHighlight[v122].Enabled)
 end
 
-v120.Parent = gethui()
+v120.Parent = K.hudParent()
 return tbl19
 end
 
@@ -66184,7 +66304,7 @@ v120.Parent = workspace.Terrain
 local v121, v122 = fn37(v119, #arg.Recordings, "0m")
 v121.Adornee = v120
 trove:Add(v121)
-v121.Parent = gethui()
+v121.Parent = K.hudParent()
 arg._billboard = v121
 arg._setDistance = v122
 return v121
@@ -66329,7 +66449,7 @@ v119.Parent = workspace.Terrain
 local v120, v121 = fn37(v118, arg.Recording.Name)
 v120.Adornee = v119
 trove:Add(v120)
-v120.Parent = gethui()
+v120.Parent = K.hudParent()
 return { Ready = v86[34], Billboard = v120, Title = v121 }
 end
 
