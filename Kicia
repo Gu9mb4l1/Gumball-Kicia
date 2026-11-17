@@ -30929,6 +30929,92 @@ local function rewrite(remote, objectId, encodedKind, packet)
     return bridge.Listener(objectId, "StartShooting", packet)
 end
 
+-- Original-Kicia compatibility: its Input function references ReplicatedStorage
+-- through an upvalue table, not always through the standard namecall path.
+-- The original Kicia replaced that reference with a *partial* table.  Instead,
+-- proxy the precise UseItem path and forward every other member/method to its
+-- real Roblox Instance.  No game modules or cosmetic references are modified.
+local legacyRestore = nil
+local function installOriginalInputPath()
+    local inputFn = v102(clientItem, "Input")
+    if type(inputFn) ~= "function" then
+        return false, "ClientItem.Input not found"
+    end
+    if type(debug) ~= "table" or type(debug.getupvalues) ~= "function" then
+        return false, "debug.getupvalues unavailable"
+    end
+
+    local realStorage = game:GetService("ReplicatedStorage")
+    local realRemotes = realStorage:FindFirstChild("Remotes")
+    local realReplication = realRemotes and realRemotes:FindFirstChild("Replication")
+    local realFighter = realReplication and realReplication:FindFirstChild("Fighter")
+    if realFighter == nil or realFighter:FindFirstChild("UseItem") == nil then
+        return false, "ReplicatedStorage.Remotes.Replication.Fighter.UseItem not ready"
+    end
+
+    -- Wrap Instance lookup but preserve methods and non-intercepted members.
+    local function instanceProxy(originalInstance, overrides)
+        local proxy
+        proxy = setmetatable({}, {
+            __index = function(_, key)
+                local override = rawget(overrides, key)
+                if override ~= nil then return override end
+                local value = originalInstance[key]
+                if type(value) == "function" then
+                    return function(self, ...)
+                        if self == proxy then
+                            return value(originalInstance, ...)
+                        end
+                        return value(self, ...)
+                    end
+                end
+                return value
+            end,
+            __newindex = function(_, key, value)
+                originalInstance[key] = value
+            end,
+            __tostring = function() return tostring(originalInstance) end,
+        })
+        return proxy
+    end
+
+    local useItemProxy = instanceProxy(useItemRemote, {
+        FireServer = function(_, objectId, encodedKind, packet, ...)
+            -- The same dispatch path handles either the old or S4 input format.
+            local forwarded, blocked = rewrite(useItemRemote, objectId, encodedKind, packet)
+            if blocked then return nil end
+            return fireServer(useItemRemote, objectId, encodedKind, forwarded, ...)
+        end,
+    })
+    local fighterProxy = instanceProxy(realFighter, { UseItem = useItemProxy })
+    local replicationProxy = instanceProxy(realReplication, { Fighter = fighterProxy })
+    local remotesProxy = instanceProxy(realRemotes, { Replication = replicationProxy })
+    local storageProxy = instanceProxy(realStorage, { Remotes = remotesProxy })
+
+    local success, upvalues = pcall(debug.getupvalues, inputFn)
+    if not success or type(upvalues) ~= "table" then
+        return false, "could not read ClientItem.Input upvalues"
+    end
+    for _, group in upvalues do
+        if type(group) == "table" then
+            for key, value in group do
+                if typeof(value) == "Instance" and v119(value, realStorage) then
+                    group[key] = storageProxy
+                    legacyRestore = { Tbl = group, Index = key, Original = value, Proxy = storageProxy }
+                    return true
+                end
+            end
+        end
+    end
+    return false, "ReplicatedStorage input upvalue was not found"
+end
+local legacyOk, legacyResult, legacyReason = pcall(installOriginalInputPath)
+local legacyInstalled = legacyOk and legacyResult == true
+if not legacyInstalled then
+    -- Failure to install the fallback must not block ordinary shooting.
+    reportFailure("ClientItem.Input fallback unavailable: " .. tostring(legacyOk and legacyReason or legacyResult))
+end
+
 local asClosure = K.fn("newcclosure") or function(fn) return fn end
 
 -- Intercept direct .FireServer calls (including calls through a stored method).
@@ -30973,12 +31059,12 @@ if not bridge.InstalledNamecall then
     end
 end
 
-if not bridge.InstalledFunction and not bridge.InstalledNamecall then
+if not bridge.InstalledFunction and not bridge.InstalledNamecall and not legacyInstalled then
     bridge.Listener = nil
     return v116.err("InputHook", "unsupported_executor", "Neither hookfunction nor hookmetamethod is available for S4 shooting input")
 end
 
-arg._restore = { Mode = "S4ShotBridge", Bridge = bridge, Listener = listener }
+arg._restore = { Mode = "S4ShotBridge", Bridge = bridge, Listener = listener, Legacy = legacyRestore }
 return v116.VoidOk
 end
 
@@ -30987,6 +31073,9 @@ local restore = arg._restore
 if restore == nil then return end
 arg._restore = nil
 if restore.Mode == "S4ShotBridge" then
+    if restore.Legacy and restore.Legacy.Tbl[restore.Legacy.Index] == restore.Legacy.Proxy then
+        restore.Legacy.Tbl[restore.Legacy.Index] = restore.Legacy.Original
+    end
     if restore.Bridge.Listener == restore.Listener then
         restore.Bridge.Listener = nil
     end
@@ -54172,10 +54261,81 @@ _targetScreenPosition = nil,
 
 setmetatable(tbl18, index2)
 
-silentAim:Add(v121:ObserveEnabledKeybind({ "SilentAim" }, function(active)
-tbl18._active = active
-arg4:SetEnabled(active)
-end))
+-- Gumball: keep the existing S4 shot bridge connected while Silent Aim's
+-- main checkbox is on. Hold/Toggle should gate redirection, not repeatedly
+-- try to install the hook on individual key presses.
+local function updateSilentAimActivation(active)
+    tbl18._active = active == true
+    arg4:SetEnabled(data.SilentAim.Enabled == true)
+end
+
+silentAim:Add(v121:ObserveEnabledKeybind({ "SilentAim" }, updateSilentAimActivation))
+
+-- Kicia's keybind registry may miss some inputs (processed keyboard events,
+-- special executor mouse handling or older migrated configs). Sync only the
+-- Silent Aim bind as a fallback; never toggle twice when the registry works.
+local inputService = game:GetService("UserInputService")
+local statePath = { "SilentAim", "Keybind", "State" }
+local function matchesSilentBind(input, bind)
+    if typeof(bind) ~= "EnumItem" then return false end
+    if bind.EnumType == Enum.KeyCode then
+        return input.KeyCode == bind
+    end
+    if bind.EnumType == Enum.UserInputType then
+        return input.UserInputType == bind
+    end
+    return false
+end
+
+local function syncSilentState(nextState)
+    local cfg = data.SilentAim
+    if cfg == nil or cfg.Keybind == nil then return end
+    if cfg.Keybind.State ~= nextState then
+        v118:Set(statePath, nextState)
+    end
+end
+
+silentAim:Connect(inputService.InputBegan, function(input, processed)
+    local cfg = data.SilentAim
+    if cfg == nil or cfg.Enabled ~= true then return end
+    local bindInfo = cfg.Keybind
+    if bindInfo == nil or not matchesSilentBind(input, bindInfo.Bind) then return end
+    if processed and input.UserInputType == Enum.UserInputType.Keyboard then return end
+    if bindInfo.Kind == "Hold" then
+        syncSilentState(true)
+    elseif bindInfo.Kind == "Toggle" then
+        local originalState = bindInfo.State == true
+        local originalBind = bindInfo.Bind
+        task.defer(function()
+            -- InputBegan in the normal registry is dispatched on the same
+            -- frame. Only recover when it failed to change the state.
+            local latest = data.SilentAim
+            local keybind = latest and latest.Keybind
+            if latest and latest.Enabled and keybind and
+                keybind.Kind == "Toggle" and keybind.Bind == originalBind and
+                (keybind.State == true) == originalState then
+                syncSilentState(not originalState)
+            end
+        end)
+    end
+end)
+
+silentAim:Connect(inputService.InputEnded, function(input)
+    local cfg = data.SilentAim
+    if cfg == nil or cfg.Keybind == nil then return end
+    if cfg.Keybind.Kind == "Hold" and matchesSilentBind(input, cfg.Keybind.Bind) then
+        syncSilentState(false)
+    end
+end)
+
+-- Recover from executor keyboard state changes that were missed on FocusLost;
+-- don't let a stale Hold state remain active after the key is released.
+silentAim:Connect(inputService.WindowFocusReleased, function()
+    local cfg = data.SilentAim
+    if cfg and cfg.Keybind and cfg.Keybind.Kind == "Hold" then
+        syncSilentState(false)
+    end
+end)
 
 arg4:SetHandler(function(arg6)
 tbl18:_HandleInput(arg6)
@@ -54292,15 +54452,22 @@ arg._currentHitbox = v135
 end
 
 index2._HandleInput = function(arg, arg2)
-if arg2.Type ~= "StartShooting" then
-return
-end
-local currentHitbox = arg._currentHitbox
-if currentHitbox == nil then
+if arg2.Type ~= "StartShooting" or not arg._active then
 return
 end
 local inner = arg._playerContext.Inner
 if inner == nil then
+return
+end
+local currentHitbox = arg._currentHitbox
+if currentHitbox == nil then
+    -- Hold may have been pressed on the same frame as the shot. Refresh the
+    -- target once instead of requiring the user to wait for a render update.
+    local heldGun = inner.ItemBehaviors:EquippedItemAsGun()
+    arg:_UpdateTarget(0, heldGun, data.SilentAim)
+    currentHitbox = arg._currentHitbox
+end
+if currentHitbox == nil then
 return
 end
 
