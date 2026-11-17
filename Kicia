@@ -18066,133 +18066,141 @@ return { Page = v120, Grid = v121 }
 end
 
 local function fn40(arg, arg2, arg3)
--- VampAuth-safe re-run after teleport. Preserve every other Kicia feature.
--- The launcher registers the actual per-user VampAuth snippet in getgenv().
--- Without that snippet we fail closed instead of downloading a public GitHub
--- script that could bypass VampAuth key checks (or return 404/empty).
+-- Project Gumball: authenticated auto-reload. Each member keeps their own
+-- VampAuth key, and the key is rechecked by VampAuth on every teleport.
+-- The cosmetic engine and all other modules are not touched by this patch.
 local teleportQueued = false
 local teleportEnabled = false
 local teleportConnection
 
-local function reportTeleportError(message)
-    K.reportGuardedError("[Gumball Teleport] " .. tostring(message), "Kicia teleport")
-end
-
-local function getTeleportQueue()
-    local queue = K.fn("queue_on_teleport") or K.fn("queueonteleport")
-    if type(queue) == "function" then return queue end
-    local ok, candidate = pcall(function()
-        local env = (type(getgenv) == "function" and getgenv()) or _G
-        return env.queue_on_teleport or env.queueonteleport
-    end)
-    if ok and type(candidate) == "function" then return candidate end
-    ok, candidate = pcall(function() return syn and syn.queue_on_teleport end)
-    return ok and type(candidate) == "function" and candidate or nil
-end
-
--- Nothing is queued at ordinary startup. Only OnTeleport triggers the queue.
-local function buildTeleportPayload()
+local function activeMemberKey()
     local env = (type(getgenv) == "function" and getgenv()) or _G
-    local bootstrap = env.__ProjectGumballVampAuthBootstrap
-    if type(bootstrap) ~= "string" or not bootstrap:find("%S") then
-        reportTeleportError("Authenticated VampAuth loader not registered. Run Kicia through the supplied VampAuth auto-execute launcher; no public GitHub fallback was attempted.")
+    local key = env.__ProjectGumballVampAuthKey or env.script_key
+    if type(key) ~= "string" or key == "" then
+        local ok, globalKey = pcall(function() return getfenv(0).script_key end)
+        if ok then key = globalKey end
+    end
+    if type(key) ~= "string" or #key < 2 or key == "PASTE-YOUR-KEY-HERE" then
         return nil
     end
-    -- Capture the exact VampAuth-provided code, including its normal key checks.
-    -- A queued payload runs in a new executor environment after teleport.
+    return key
+end
+
+local function reportTeleportIssue(code)
+    local env = (type(getgenv) == "function" and getgenv()) or _G
+    local reporter = env.GumballReportError
+    if type(reporter) == "function" then
+        pcall(reporter, "[Gumball Teleport] " .. tostring(code), "VampAuth Auto-Execute")
+    end
+end
+
+-- Only construct the destination script once a real teleport starts.
+local function buildTeleportPayload()
+    local key = activeMemberKey()
+    if not key then return nil, "Missing member key: run your personal VampAuth launcher first" end
     local sourceJob = tostring(game.JobId or "")
     local sourcePlace = tostring(game.PlaceId)
     return [=[
--- Project Gumball: authenticated destination-only teleport loader.
+-- Project Gumball / VampAuth: destination-only, individual-key reload.
 local env = (type(getgenv) == "function" and getgenv()) or _G
-local originJob = ]=] .. string.format('%q', sourceJob) .. [=[
-local originPlace = ]=] .. string.format('%q', sourcePlace) .. [=[
-local bootstrap = ]=] .. string.format('%q', bootstrap) .. [=[
-local errorWebhook = "https://discord.com/api/webhooks/1570433638581936232/UndnREmAdvgKo1NrJzQ2IwPTi8ZkKDWTimH2NM-HgJAXQ_oRDaUnsp76F1qDK0Weq1Fb"
+local originJob = ]=] .. string.format("%q", sourceJob) .. [=[
+local originPlace = ]=] .. string.format("%q", sourcePlace) .. [=[
+local memberKey = ]=] .. string.format("%q", key) .. [=[
+local loaderUrl = ]=] .. string.format("%q", "https://vampauth.com/v1/loaders/0a07ad972ce3c4698fd05b6ea8d19524.lua") .. [=[
+local errorWebhook = ]=] .. string.format("%q", "https://discord.com/api/webhooks/1570433638581936232/UndnREmAdvgKo1NrJzQ2IwPTi8ZkKDWTimH2NM-HgJAXQ_oRDaUnsp76F1qDK0Weq1Fb") .. [=[
+local job = tostring(game.JobId or "")
+local place = tostring(game.PlaceId)
+if job == originJob and place == originPlace then return end
+local session = place .. ":" .. job
+if env.__ProjectGumballTeleportLaunchSession == session
+    or env.__ProjectGumballVampAuthLaunchSession == session then return end
+if env.KiciaRebuild and not env.KiciaRebuild.destroyed
+    and env.KiciaRebuild.session == session then return end
 
-local function reportFailure(reason)
-    -- Script-produced failures go to the ERROR webhook, not executor console.
-    local message = "[Gumball Teleport] " .. tostring(reason)
+env.__ProjectGumballTeleportLaunchSession = session
+env.__ProjectGumballVampAuthLaunchSession = session
+-- Preserve the same member key; NEVER generate or share a different key.
+env.__ProjectGumballVampAuthKey = memberKey
+env.script_key = memberKey
+script_key = memberKey
+
+local function reportFailure(stage)
+    -- Report only non-secret metadata; never forward a member's key.
+    local message = "VampAuth teleport loader failed at " .. stage .. " (key expired, loader unavailable or execution failed)"
     local existing = env.GumballReportError
     if type(existing) == "function" then
-        pcall(existing, message, "VampAuth teleport loader")
+        pcall(existing, message, "VampAuth Auto-Execute")
         return
     end
-    local ok, req = pcall(function()
-        return (syn and syn.request) or http_request or request or
-            (http and http.request) or (fluxus and fluxus.request)
-    end)
-    if not ok or type(req) ~= "function" then return end
-    pcall(function()
-        local payload = game:GetService("HttpService"):JSONEncode({
-            username = "Project Gumball — Error Reporter",
-            allowed_mentions = { parse = {} },
-            embeds = {{
-                title = "Kicia Teleport Loader Error",
-                description = message:sub(1, 1500),
-                color = 15158332,
-            }},
-        })
-        req({
-            Url = errorWebhook,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = payload,
-        })
-    end)
+    local req = (syn and syn.request) or http_request or request or
+        (http and http.request) or (fluxus and fluxus.request)
+    if type(req) == "function" then
+        pcall(function()
+            local data = game:GetService("HttpService"):JSONEncode({
+                username = "Project Gumball", allowed_mentions = {parse = {}},
+                embeds = {{ title = "Kicia — VampAuth Teleport Error",
+                    description = message,
+                    fields = {{ name = "PlaceId", value = place, inline = true },
+                        { name = "Stage", value = stage, inline = true }} }}
+            })
+            req({ Url = errorWebhook, Method = "POST",
+                Headers = {["Content-Type"] = "application/json"}, Body = data })
+        end)
+    end
 end
 
-local currentJob = tostring(game.JobId or "")
-local currentPlace = tostring(game.PlaceId)
-if currentJob == originJob and currentPlace == originPlace then return end
-local session = currentPlace .. ":" .. currentJob
-if env.__ProjectGumballTeleportLaunchSession == session then return end
-if env.KiciaRebuild and not env.KiciaRebuild.destroyed and env.KiciaRebuild.session == session then return end
-env.__ProjectGumballTeleportLaunchSession = session
-
-if not game:IsLoaded() then game.Loaded:Wait() end
-local ok, err = pcall(function()
-    -- Restore bootstrap for future teleports in this new session.
-    env.__ProjectGumballVampAuthBootstrap = bootstrap
-    local chunk, compileErr = loadstring(bootstrap)
-    if type(chunk) ~= "function" then
-        error("VampAuth loader compilation failed: " .. tostring(compileErr), 0)
-    end
-    -- The official VampAuth loader validates the key before delivering Kicia.
-    chunk()
+local stage = "Roblox readiness"
+local ok = pcall(function()
+    if not game:IsLoaded() then game.Loaded:Wait() end
+    stage = "download"
+    local source = game:HttpGet(loaderUrl)
+    assert(type(source) == "string" and #source > 0, "empty VampAuth response")
+    stage = "compile"
+    local chunk, compileErr = loadstring(source)
+    assert(type(chunk) == "function", compileErr or "VampAuth compilation failed")
+    stage = "execute"
+    chunk() -- VampAuth validates this member's key, including its expiry.
 end)
 if not ok then
     env.__ProjectGumballTeleportLaunchSession = nil
-    reportFailure(err)
+    env.__ProjectGumballVampAuthLaunchSession = nil
+    reportFailure(stage)
 end
 ]=]
 end
 
+local function getTeleportQueue()
+    local queue = K.fn("queue_on_teleport") or K.fn("queueonteleport")
+    if queue then return queue end
+    local ok, candidate = pcall(function() return syn and syn.queue_on_teleport end)
+    if ok and type(candidate) == "function" then return candidate end
+    return nil
+end
+
 local function onTeleport(state)
     if not teleportEnabled or teleportQueued then return end
-    if state ~= Enum.TeleportState.Started and state ~= Enum.TeleportState.InProgress then
-        return
-    end
+    if state ~= Enum.TeleportState.Started and state ~= Enum.TeleportState.InProgress then return end
     local queue = getTeleportQueue()
     if not queue then
-        reportTeleportError("Executor does not expose queue_on_teleport/queueonteleport")
+        reportTeleportIssue("Executor has no queue_on_teleport capability")
         return
     end
-    local payload = buildTeleportPayload()
-    if not payload then return end
-    local ok, err = pcall(queue, payload)
+    local payload, issue = buildTeleportPayload()
+    if not payload then
+        reportTeleportIssue(issue)
+        return
+    end
+    local ok = pcall(queue, payload)
     if ok then
         teleportQueued = true
     else
-        reportTeleportError("Failed to queue authenticated loader: " .. tostring(err))
+        reportTeleportIssue("Executor rejected teleport queue")
     end
 end
 
 local function updateTeleportQueue(enabled)
     teleportEnabled = enabled == true
     if teleportEnabled then
-        -- The saved setting only arms the OnTeleport listener; never launches
-        -- at regular join/login or during config load.
         if not teleportConnection and player then
             teleportConnection = K.track(player.OnTeleport:Connect(onTeleport))
         end
@@ -18204,35 +18212,35 @@ local function updateTeleportQueue(enabled)
         if teleportQueued then
             local clear = K.fn("clear_teleport_queue") or K.fn("clearteleportqueue")
             if clear then
-                local ok, err = pcall(clear)
+                local ok = pcall(clear)
                 if ok then teleportQueued = false
-                else reportTeleportError("Unable to clear teleport queue: " .. tostring(err)) end
+                else reportTeleportIssue("Could not clear pending teleport queue") end
             end
         end
     end
 end
+
 local teleportToggle = arg:AddToggle({
     Label = "Re-run After Teleport",
     Config = arg3,
     OnChanged = updateTeleportQueue,
 })
--- A saved ON value only arms the teleport event; it never runs on join.
+-- Stored settings only arm the listener. Never run on initial join by themselves.
 task.defer(function()
     if teleportToggle and teleportToggle.Value == true then
         updateTeleportQueue(true)
     end
 end)
 local stateData = arg2:GetStateData()
-
 arg:AddToggle({
-Label = v86[142],
-Default = stateData ~= nil and stateData.SilentLoad == true,
-OnChanged = function(silentLoad)
-if stateData ~= nil then
-stateData.SilentLoad = silentLoad
-arg2:SaveState()
-end
-end,
+    Label = v86[142],
+    Default = stateData ~= nil and stateData.SilentLoad == true,
+    OnChanged = function(silentLoad)
+        if stateData ~= nil then
+            stateData.SilentLoad = silentLoad
+            arg2:SaveState()
+        end
+    end,
 })
 end
 
