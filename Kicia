@@ -1,11 +1,6 @@
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("       PROJECT GUMBALL")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
+print("(Project - Gumball) Script:Kiciahook")
 print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
-
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 -- Project Gumball Kicia: Discord diagnostics, errors only.
 -- Sends the error to the error webhook and the affected Roblox account to the
 -- user webhook when an error is detected. No startup reports or GUI prompts.
