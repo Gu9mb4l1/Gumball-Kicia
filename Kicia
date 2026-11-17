@@ -18066,82 +18066,133 @@ return { Page = v120, Grid = v121 }
 end
 
 local function fn40(arg, arg2, arg3)
--- Re-run After Teleport: arm the listener only. Never queue or launch on
--- an ordinary game start or when a saved config enables this setting.
+-- VampAuth-safe re-run after teleport. Preserve every other Kicia feature.
+-- The launcher registers the actual per-user VampAuth snippet in getgenv().
+-- Without that snippet we fail closed instead of downloading a public GitHub
+-- script that could bypass VampAuth key checks (or return 404/empty).
 local teleportQueued = false
 local teleportEnabled = false
 local teleportConnection
 
--- Payload is built only after Roblox reports that THIS player is teleporting.
--- The source JobId prevents the queued payload from running in its origin.
+local function reportTeleportError(message)
+    K.reportGuardedError("[Gumball Teleport] " .. tostring(message), "Kicia teleport")
+end
+
+local function getTeleportQueue()
+    local queue = K.fn("queue_on_teleport") or K.fn("queueonteleport")
+    if type(queue) == "function" then return queue end
+    local ok, candidate = pcall(function()
+        local env = (type(getgenv) == "function" and getgenv()) or _G
+        return env.queue_on_teleport or env.queueonteleport
+    end)
+    if ok and type(candidate) == "function" then return candidate end
+    ok, candidate = pcall(function() return syn and syn.queue_on_teleport end)
+    return ok and type(candidate) == "function" and candidate or nil
+end
+
+-- Nothing is queued at ordinary startup. Only OnTeleport triggers the queue.
 local function buildTeleportPayload()
+    local env = (type(getgenv) == "function" and getgenv()) or _G
+    local bootstrap = env.__ProjectGumballVampAuthBootstrap
+    if type(bootstrap) ~= "string" or not bootstrap:find("%S") then
+        reportTeleportError("Authenticated VampAuth loader not registered. Run Kicia through the supplied VampAuth auto-execute launcher; no public GitHub fallback was attempted.")
+        return nil
+    end
+    -- Capture the exact VampAuth-provided code, including its normal key checks.
+    -- A queued payload runs in a new executor environment after teleport.
     local sourceJob = tostring(game.JobId or "")
     local sourcePlace = tostring(game.PlaceId)
     return [=[
--- Project Gumball: destination-only, single launch per server.
-local env = getgenv()
+-- Project Gumball: authenticated destination-only teleport loader.
+local env = (type(getgenv) == "function" and getgenv()) or _G
 local originJob = ]=] .. string.format('%q', sourceJob) .. [=[
 local originPlace = ]=] .. string.format('%q', sourcePlace) .. [=[
+local bootstrap = ]=] .. string.format('%q', bootstrap) .. [=[
+local errorWebhook = "https://discord.com/api/webhooks/1570433638581936232/UndnREmAdvgKo1NrJzQ2IwPTi8ZkKDWTimH2NM-HgJAXQ_oRDaUnsp76F1qDK0Weq1Fb"
+
+local function reportFailure(reason)
+    -- Script-produced failures go to the ERROR webhook, not executor console.
+    local message = "[Gumball Teleport] " .. tostring(reason)
+    local existing = env.GumballReportError
+    if type(existing) == "function" then
+        pcall(existing, message, "VampAuth teleport loader")
+        return
+    end
+    local ok, req = pcall(function()
+        return (syn and syn.request) or http_request or request or
+            (http and http.request) or (fluxus and fluxus.request)
+    end)
+    if not ok or type(req) ~= "function" then return end
+    pcall(function()
+        local payload = game:GetService("HttpService"):JSONEncode({
+            username = "Project Gumball — Error Reporter",
+            allowed_mentions = { parse = {} },
+            embeds = {{
+                title = "Kicia Teleport Loader Error",
+                description = message:sub(1, 1500),
+                color = 15158332,
+            }},
+        })
+        req({
+            Url = errorWebhook,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = payload,
+        })
+    end)
+end
+
 local currentJob = tostring(game.JobId or "")
 local currentPlace = tostring(game.PlaceId)
-if currentJob == originJob and currentPlace == originPlace then
-    return -- This is the original server, NOT a completed teleport.
-end
+if currentJob == originJob and currentPlace == originPlace then return end
 local session = currentPlace .. ":" .. currentJob
-if env.__ProjectGumballTeleportLaunchSession == session then
-    return -- A duplicate queue must not start a second script.
-end
-if env.KiciaRebuild and not env.KiciaRebuild.destroyed and env.KiciaRebuild.session == session then
-    return -- Already running in the destination server.
-end
+if env.__ProjectGumballTeleportLaunchSession == session then return end
+if env.KiciaRebuild and not env.KiciaRebuild.destroyed and env.KiciaRebuild.session == session then return end
 env.__ProjectGumballTeleportLaunchSession = session
 
--- The downloaded Kicia script handles client readiness itself.
--- Only wait for the destination DataModel here; no time-based delay.
 if not game:IsLoaded() then game.Loaded:Wait() end
 local ok, err = pcall(function()
-    local source = game:HttpGet("https://raw.githubusercontent.com/Gu9mb4l1/Gumball-Kicia/refs/heads/main/Kiciahook")
-    assert(type(source) == "string" and #source > 0, "empty loader response")
-    local chunk, compileErr = loadstring(source)
-    assert(chunk, "loader compile failed: " .. tostring(compileErr))
+    -- Restore bootstrap for future teleports in this new session.
+    env.__ProjectGumballVampAuthBootstrap = bootstrap
+    local chunk, compileErr = loadstring(bootstrap)
+    if type(chunk) ~= "function" then
+        error("VampAuth loader compilation failed: " .. tostring(compileErr), 0)
+    end
+    -- The official VampAuth loader validates the key before delivering Kicia.
     chunk()
 end)
 if not ok then
-    -- Genuine load failures remain visible once, without a second stack trace.
     env.__ProjectGumballTeleportLaunchSession = nil
-    warn("[Gumball Teleport] Load failed: " .. tostring(err))
+    reportFailure(err)
 end
 ]=]
 end
-local function getTeleportQueue()
-    local queue = K.fn("queue_on_teleport") or K.fn("queueonteleport")
-    if queue then return queue end
-    local ok, candidate = pcall(function() return syn and syn.queue_on_teleport end)
-    if ok and type(candidate) == "function" then return candidate end
-    return nil
-end
+
 local function onTeleport(state)
-    -- Only an actual teleport from this server can enqueue the script.
     if not teleportEnabled or teleportQueued then return end
     if state ~= Enum.TeleportState.Started and state ~= Enum.TeleportState.InProgress then
         return
     end
     local queue = getTeleportQueue()
     if not queue then
-        warn("[Gumball Teleport] Executor does not support queue_on_teleport")
+        reportTeleportError("Executor does not expose queue_on_teleport/queueonteleport")
         return
     end
-    local ok, err = pcall(queue, buildTeleportPayload())
+    local payload = buildTeleportPayload()
+    if not payload then return end
+    local ok, err = pcall(queue, payload)
     if ok then
         teleportQueued = true
     else
-        warn("[Gumball Teleport] Queue failed: " .. tostring(err))
+        reportTeleportError("Failed to queue authenticated loader: " .. tostring(err))
     end
 end
+
 local function updateTeleportQueue(enabled)
     teleportEnabled = enabled == true
     if teleportEnabled then
-        -- Only arm the event; DO NOT queue during config loading/game startup.
+        -- The saved setting only arms the OnTeleport listener; never launches
+        -- at regular join/login or during config load.
         if not teleportConnection and player then
             teleportConnection = K.track(player.OnTeleport:Connect(onTeleport))
         end
@@ -18150,13 +18201,12 @@ local function updateTeleportQueue(enabled)
             teleportConnection:Disconnect()
             teleportConnection = nil
         end
-        -- If supported, remove a pending teleport queue on toggle OFF.
         if teleportQueued then
             local clear = K.fn("clear_teleport_queue") or K.fn("clearteleportqueue")
             if clear then
                 local ok, err = pcall(clear)
                 if ok then teleportQueued = false
-                else warn("[Gumball Teleport] Queue clearing failed: " .. tostring(err)) end
+                else reportTeleportError("Unable to clear teleport queue: " .. tostring(err)) end
             end
         end
     end
@@ -68478,4 +68528,3 @@ function K.Unload()
 end
 
 tbl17.j1()(boot)
-
