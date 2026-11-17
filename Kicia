@@ -30856,75 +30856,146 @@ break
 end
 end
 
+-- Season 4 input bridge: dispatch gun shot packets without replacing the
+-- ClientItem Input function's ReplicatedStorage upvalue (which breaks S4 guns).
+-- Only the UseItem remote is inspected; other remote traffic is unmodified.
 index2._Load = function(arg)
 if arg._restore ~= nil then
-return v116.VoidOk
-end
--- Rivals Season 4 compatibility: ClientItem's legacy InputHook replaced the
--- entire shared ReplicatedStorage upvalue with a partial table. That can break
--- normal weapon creation/input after game updates even with other options off.
--- Do not install this hook unless explicitly opted into the legacy behavior.
--- AntiKatana and other handlers using this bridge are inactive by default.
-if not (type(getgenv) == "function" and getgenv().GumballAllowLegacyInputBridge == true) then
     return v116.VoidOk
 end
-local input = v102(clientItem, "Input")
-if input == nil then
-return v116.err("InputHook", "function_lookup", "Failed to find Input in prototype")
+
+local env = type(getgenv) == "function" and getgenv() or _G
+local bridge = env.__ProjectGumballS4ShotInputHook
+if type(bridge) ~= "table" or bridge.Version ~= 1 then
+    bridge = {
+        Version = 1,
+        Remote = useItemRemote,
+        Rewritten = setmetatable({}, { __mode = "k" }),
+        InstalledFunction = false,
+        InstalledNamecall = false,
+        Listener = nil,
+    }
+    env.__ProjectGumballS4ShotInputHook = bridge
+end
+bridge.Remote = useItemRemote
+
+local function reportFailure(err)
+    local reporter = env.GumballReportError
+    if type(reporter) == "function" then
+        pcall(reporter, tostring(err), "Kicia SilentAim S4 input bridge")
+    end
 end
 
-for _, v120 in debug.getupvalues(input) do
-if type(v120) ~= "table" then
-continue
+local function listener(objectId, kind, packet)
+    if kind ~= "StartShooting" then return packet, false end
+    if type(packet) ~= "table" or bridge.Rewritten[packet] then
+        return packet, false
+    end
+    -- Keep the game-owned input payload intact: change only the transmitted copy.
+    local copy = table.clone(packet)
+    if type(copy["\1"]) == "table" then
+        copy["\1"] = table.clone(copy["\1"])
+    end
+    local update = { Block = false, ObjectId = objectId, Type = kind, Args = copy }
+    local ok, err = pcall(function() arg:_Dispatch(update) end)
+    if not ok then
+        reportFailure(err)
+        return packet, false
+    end
+    if type(update.Args) == "table" then
+        bridge.Rewritten[update.Args] = true
+    end
+    return update.Args, update.Block == true
 end
 
-for k, v121 in v120, nil, nil do
-if typeof(v121) ~= "Instance" or not v119(v121, game:GetService("ReplicatedStorage")) then
-continue
+bridge.Listener = listener
+
+-- The hooks are retained across Kicia unload/reload; their active Listener is
+-- cleared on unload. This avoids stacking another global hook each injection.
+local function rewrite(remote, objectId, encodedKind, packet)
+    if remote ~= bridge.Remote or type(packet) ~= "table" or bridge.Listener == nil then
+        return packet, false
+    end
+    if bridge.Rewritten[packet] then
+        return packet, false
+    end
+    local ok, kind = pcall(v117.decode, encodedKind)
+    if not ok then
+        return packet, false
+    end
+    if kind ~= "StartShooting" and encodedKind ~= "StartShooting" then
+        return packet, false
+    end
+    return bridge.Listener(objectId, "StartShooting", packet)
 end
 
-v120[k] = {
-Remotes = {
-Replication = {
-Fighter = {
-UseItem = { FireServer = function(arg2, arg3, arg4, arg5, ...)
-local tbl18 = { Block = false, ObjectId = arg3, Type = v117.decode(arg4), Args = arg5 }
-arg:_Dispatch(tbl18)
-if tbl18.Block then
-return
-end
-local v122 = fireServer
-local args = tbl18.Args
-local v123 = table.pack(...)
-local v124 = useItemRemote
-v123.n = 5 + v123.n - 1
-table.move(v123, 1, v123.n, 5, v123)
-v123[1] = v124
-v123[2] = arg3
-v123[3] = arg4
-v123[4] = args
-v122(table.unpack(v123, 1, v123.n))
-end },
-},
-},
-},
-}
+local asClosure = K.fn("newcclosure") or function(fn) return fn end
 
-arg._restore = { Tbl = v120, Index = k, Original = v121 }
+-- Intercept direct .FireServer calls (including calls through a stored method).
+if not bridge.InstalledFunction then
+    local hookFn = K.fn("hookfunction")
+    if type(hookFn) == "function" then
+        local original = useItemRemote.FireServer
+        local wrapper = asClosure(function(remote, objectId, encodedKind, packet, ...)
+            local forwarded, blocked = rewrite(remote, objectId, encodedKind, packet)
+            if blocked then return nil end
+            return original(remote, objectId, encodedKind, forwarded, ...)
+        end)
+        local ok, previous = pcall(hookFn, original, wrapper)
+        if ok and type(previous) == "function" then
+            original = previous
+            bridge.InstalledFunction = true
+        end
+    end
+end
+
+-- Also support the Roblox :FireServer namecall path where supported.
+-- Rewritten is a weak-key set, so a call intercepted twice is only edited once.
+if not bridge.InstalledNamecall then
+    local hookMeta = K.fn("hookmetamethod")
+    local namecallMethod = K.fn("getnamecallmethod")
+    if type(hookMeta) == "function" and type(namecallMethod) == "function" then
+        local originalNamecall
+        local wrapper = asClosure(function(remote, ...)
+            if remote ~= bridge.Remote or namecallMethod() ~= "FireServer" then
+                return originalNamecall(remote, ...)
+            end
+            local objectId, encodedKind, packet = ...
+            local forwarded, blocked = rewrite(remote, objectId, encodedKind, packet)
+            if blocked then return nil end
+            return originalNamecall(remote, objectId, encodedKind, forwarded, select(4, ...))
+        end)
+        local ok, previous = pcall(hookMeta, game, "__namecall", wrapper)
+        if ok and type(previous) == "function" then
+            originalNamecall = previous
+            bridge.InstalledNamecall = true
+        end
+    end
+end
+
+if not bridge.InstalledFunction and not bridge.InstalledNamecall then
+    bridge.Listener = nil
+    return v116.err("InputHook", "unsupported_executor", "Neither hookfunction nor hookmetamethod is available for S4 shooting input")
+end
+
+arg._restore = { Mode = "S4ShotBridge", Bridge = bridge, Listener = listener }
 return v116.VoidOk
-end
-end
-
-return v116.err("InputHook", "upvalue_scan", "Failed to find ReplicatedStorage upvalue")
 end
 
 index2._Revert = function(arg)
 local restore = arg._restore
-if restore == nil then
-return
-end
+if restore == nil then return end
 arg._restore = nil
-restore.Tbl[restore.Index] = restore.Original
+if restore.Mode == "S4ShotBridge" then
+    if restore.Bridge.Listener == restore.Listener then
+        restore.Bridge.Listener = nil
+    end
+    return
+end
+-- Compatibility with legacy restore objects, if supplied by another build.
+if restore.Tbl ~= nil then
+    restore.Tbl[restore.Index] = restore.Original
+end
 end
 
 index2.Destroy = function(arg)
