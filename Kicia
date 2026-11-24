@@ -1,6 +1,7 @@
 print("(Project - Gumball) Script:Kiciahook")
 print("Discord: https://discord.gg/projectgumball")
 print("Owner Social: https://haunt.gg/gu9mball")
+print("------------------------------------------")
 -- Project Gumball Kicia: Discord diagnostics, errors only.
 -- Sends the error to the error webhook and the affected Roblox account to the
 -- user webhook when an error is detected. No startup reports or GUI prompts.
@@ -39512,7 +39513,7 @@ end
 end)
 if not okBody and not arg._warnedBody then
 arg._warnedBody = true
-warn("[Kicia] ViewModel hook skipped: " .. tostring(errBody))
+K.reportGuardedError("[Kicia] ViewModel hook skipped: " .. tostring(errBody), "ViewModel")
 end
 end,
 }
@@ -54374,8 +54375,15 @@ return arg._targetScreenPosition
 end
 
 index2.Update = function(arg, arg2)
-local inner = arg._playerContext.Inner
 local silentAim = data.SilentAim
+if silentAim.Enabled ~= true then
+    -- Keep the visual hidden but skip costly gun/context polling when disabled.
+    if arg._currentTarget ~= nil or arg._currentHitbox ~= nil then arg:_Reset() end
+    arg._fovRender:SetVisible(false)
+    arg._textIndicatorList:Hide("Manipulated")
+    return
+end
+local inner = arg._playerContext.Inner
 local flag19 = inner ~= nil and inner.ItemBehaviors:EquippedItemAsGun() or nil
 arg:_UpdateTarget(arg2, flag19, silentAim)
 arg:_UpdateRender(arg2, flag19, silentAim)
@@ -61107,7 +61115,7 @@ function GumballRealFPS:Apply()
     if not self.Enabled then return self:Restore() end
     local setter = GumballCapFunction()
     if not setter then
-        warn("[Project Gumball] Real FPS cap unavailable: Potassium does not expose setfpscap. FPS cannot be forced by a Lua slider.")
+        K.reportGuardedError("FPS cap unavailable: executor does not expose setfpscap", "FPS Limit")
         return false
     end
     if not self.CapturedOriginal then
@@ -61120,7 +61128,7 @@ function GumballRealFPS:Apply()
     local target = math.clamp(math.floor(tonumber(self.Limit) or 60), 10, 240)
     local ok, err = pcall(setter, target)
     if not ok then
-        warn("[Project Gumball] FPS cap change failed: " .. tostring(err))
+        K.reportGuardedError("FPS cap change failed: " .. tostring(err), "FPS Limit")
         return false
     end
     return true
@@ -64946,6 +64954,7 @@ if not flag2 then
 return
 end
 arg._innerContext = innerContext
+arg._inactiveResetDone = false
 arg:_ClearReloadTransport()
 end))
 
@@ -64965,12 +64974,39 @@ if arg._enabled == enabled then
 return
 end
 arg._enabled = enabled
+-- Ensure a transition to inactive clears gameplay overrides once, not on every frame.
+arg._inactiveResetDone = false
 v112(workspace, "FallenPartsDestroyHeight",
     enabled and not (v115.Data.FakePosition and v115.Data.FakePosition.Enabled) and (0/0)
     or fallenPartsDestroyHeight)
-v107(v108, "DFIntS2PhysicsSenderRate", enabled and "120" or "15")
-v107(v108, "DFIntAssemblyHistoryBufferSize", enabled and "2147483648" or "15")
-v107(v108, "DFIntAssemblyHistorySkipSize", enabled and v86[18] or "8")
+-- Capture available original physics flags before altering them. Their defaults
+-- vary by Roblox client; do not assume the game's values are 15/15/8.
+local flagReader = K.fn("getfflag")
+local physicsFlags = {
+    { "DFIntS2PhysicsSenderRate", "120", "15" },
+    { "DFIntAssemblyHistoryBufferSize", "2147483648", "15" },
+    { "DFIntAssemblyHistorySkipSize", "0", "8" },
+}
+if enabled then
+    arg._savedPhysicsFlags = {}
+    if type(flagReader) == "function" then
+        for _, entry in ipairs(physicsFlags) do
+            local okFlag, originalValue = pcall(flagReader, entry[1])
+            if okFlag and originalValue ~= nil then
+                arg._savedPhysicsFlags[entry[1]] = tostring(originalValue)
+            end
+        end
+    end
+    for _, entry in ipairs(physicsFlags) do pcall(v108, entry[1], entry[2]) end
+else
+    for _, entry in ipairs(physicsFlags) do
+        local saved = arg._savedPhysicsFlags and arg._savedPhysicsFlags[entry[1]]
+        -- Fallback retains Kicia's prior restoration values where an executor
+        -- does not expose getfflag; Roblox defaults cannot be inferred here.
+        pcall(v108, entry[1], saved or entry[3])
+    end
+    arg._savedPhysicsFlags = nil
+end
 
 if not enabled then
 arg:_ClearReloadTransport()
@@ -64980,19 +65016,30 @@ end
 index2.Update = function(arg, arg2)
 local innerContext = arg._innerContext
 if innerContext == nil then
-arg:_Reset()
-return
+    if not arg._inactiveResetDone then
+        arg:_Reset()
+        arg._inactiveResetDone = true
+    end
+    return
 end
 local fighterState = innerContext.FighterState
 if fighterState.EnvironmentId == nil or not arg._enabled then
-arg:_Reset()
-return
+    if not arg._inactiveResetDone then
+        arg:_Reset()
+        arg._inactiveResetDone = true
+    end
+    return
 end
 local state = fighterState.Character.State
 if not state.Alive then
-arg:_Reset()
-return
+    if not arg._inactiveResetDone then
+        arg:_Reset()
+        arg._inactiveResetDone = true
+    end
+    return
 end
+-- The active path must keep running every frame; it uses live character state.
+arg._inactiveResetDone = false
 local characterController = innerContext.CharacterController
 local clientCFrame = characterController:GetClientCFrame()
 local mode = v115.Data.Ragebot.Evasion.Mode
@@ -65251,6 +65298,9 @@ innerContext.CharacterController:SendViewAngles(20, nil)
 end
 
 index2.Destroy = function(arg)
+-- The old implementation could leave physics fast-flags changed after unloading.
+if arg._enabled then pcall(function() arg:SetEnabled(false) end) end
+pcall(function() arg:_Reset() end)
 arg._trove:Destroy()
 end
 
@@ -67919,6 +67969,106 @@ v188:ReportResult(coreLoad)
 end
 local v239 = v147:Add(v146.new())
 
+-- Project Gumball: short, local, sampled performance audit.
+-- Records timing to a local JSON file; never sends performance logs as errors.
+local gPerf = {
+    started = os.clock(), frames = 0, frameTotal = 0, worstDt = 0,
+    slow33 = 0, slow50 = 0, slow100 = 0, pingSum = 0, pingCount = 0,
+    pingPeak = 0, lastPingAt = 0, sample = false, done = false,
+    stages = {},
+}
+-- Optional: call getgenv().GumballStartPerformanceProfile() after a match
+-- starts if the first automatic 20-second sample happened in the lobby.
+local function gPerfRestart()
+    gPerf.started = os.clock()
+    gPerf.frames, gPerf.frameTotal, gPerf.worstDt = 0, 0, 0
+    gPerf.slow33, gPerf.slow50, gPerf.slow100 = 0, 0, 0
+    gPerf.pingSum, gPerf.pingCount, gPerf.pingPeak = 0, 0, 0
+    gPerf.lastPingAt, gPerf.sample, gPerf.done = 0, false, false
+    gPerf.stages = {}
+end
+getgenv().GumballStartPerformanceProfile = gPerfRestart
+K.onUnload(function()
+    if getgenv().GumballStartPerformanceProfile == gPerfRestart then
+        getgenv().GumballStartPerformanceProfile = nil
+    end
+end)
+local function gPerfCall(name, object, method, ...)
+    if not gPerf.sample or gPerf.done then
+        return object[method](object, ...)
+    end
+    local started = os.clock()
+    local result = object[method](object, ...)
+    local milliseconds = (os.clock() - started) * 1000
+    local stage = gPerf.stages[name]
+    if not stage then
+        stage = { totalMs = 0, maxMs = 0, count = 0 }
+        gPerf.stages[name] = stage
+    end
+    stage.count += 1
+    stage.totalMs += milliseconds
+    if milliseconds > stage.maxMs then stage.maxMs = milliseconds end
+    return result
+end
+local function gPerfTick(dt)
+    if gPerf.done then return end
+    local now = os.clock()
+    local d = type(dt) == "number" and math.max(0, dt) or 0
+    gPerf.frames += 1
+    gPerf.frameTotal += d
+    if d > gPerf.worstDt then gPerf.worstDt = d end
+    if d > 0.033 then gPerf.slow33 += 1 end
+    if d > 0.050 then gPerf.slow50 += 1 end
+    if d > 0.100 then gPerf.slow100 += 1 end
+    gPerf.sample = gPerf.frames % 30 == 0
+    if now - gPerf.lastPingAt >= 1.5 then
+        gPerf.lastPingAt = now
+        local okPing, ping = pcall(function()
+            return game:GetService("Players").LocalPlayer:GetNetworkPing()
+        end)
+        if okPing and type(ping) == "number" and ping >= 0 then
+            local pingMs = ping * 1000
+            gPerf.pingSum += pingMs
+            gPerf.pingCount += 1
+            if pingMs > gPerf.pingPeak then gPerf.pingPeak = pingMs end
+        end
+    end
+    if now - gPerf.started < 20 then return end
+    gPerf.done = true
+    task.defer(function()
+        local elapsed = now - gPerf.started
+        local stages = {}
+        for name, stage in pairs(gPerf.stages) do
+            stages[name] = {
+                samples = stage.count,
+                averageMs = stage.count > 0 and math.floor(stage.totalMs / stage.count * 1000 + 0.5) / 1000 or 0,
+                peakMs = math.floor(stage.maxMs * 1000 + 0.5) / 1000,
+            }
+        end
+        local report = {
+            script = "Kicia", version = "SmoothMovementAudit",
+            sampledSeconds = math.floor(elapsed * 10 + 0.5) / 10,
+            frames = gPerf.frames,
+            averageFPS = gPerf.frameTotal > 0 and math.floor(gPerf.frames / gPerf.frameTotal * 10 + 0.5) / 10 or 0,
+            worstFrameMs = math.floor(gPerf.worstDt * 100000 + 0.5) / 100,
+            framesOver33ms = gPerf.slow33,
+            framesOver50ms = gPerf.slow50,
+            framesOver100ms = gPerf.slow100,
+            averagePingMs = gPerf.pingCount > 0 and math.floor(gPerf.pingSum / gPerf.pingCount * 10 + 0.5) / 10 or nil,
+            peakPingMs = math.floor(gPerf.pingPeak * 10 + 0.5) / 10,
+            stages = stages,
+            -- Ping is server/network delay; frame spikes are local client stutter.
+            note = "Collected locally; not proof of the cause of lag",
+        }
+        pcall(function()
+            getgenv().GumballPerformanceReport = report
+            if type(writefile) == "function" then
+                writefile("kiciarebuild/rivals/performance_profile.json", game:GetService("HttpService"):JSONEncode(report))
+            end
+        end)
+    end)
+end
+
 v239:SetPreCameraRender(function(arg2)
 v218:Update()
 v220:Update(arg2)
@@ -67928,14 +68078,14 @@ end)
 v239:SetPreRender(function(arg2)
 v205:PreRender(arg2)
 v206:PreRender(arg2)
-v237:PreRender()
+gPerfCall("Cosmetics.PreRender", v237, "PreRender")
 v213:PreRender(arg2)
 v214:PreRender(arg2)
-v230:Update(arg2)
-v216:Update()
+gPerfCall("PlayerIdentities.Update", v230, "Update", arg2)
+gPerfCall("ViewModel.Update", v216, "Update")
 v224:Update()
-v234:Update(arg2)
-v189:Update()
+gPerfCall("HUD.Update", v234, "Update", arg2)
+gPerfCall("ColorAnimation.Update", v189, "Update")
 
 if v236 then
 v236:Update(arg2)
@@ -67947,6 +68097,7 @@ v231:PreSimulationUpdate(arg2)
 end)
 
 v239:SetHeartbeat(function(arg2)
+gPerfTick(arg2)
 v199:HeartbeatUpdate()
 v190:Update(arg2)
 
@@ -67957,14 +68108,14 @@ end
 v229:Update()
 
 if v227 then
-v227:Update(arg2)
+gPerfCall("Ragebot.Update", v227, "Update", arg2)
 end
 
-v228:Update(arg2)
-v219:Update(arg2)
+gPerfCall("Combat.Update", v228, "Update", arg2)
+gPerfCall("SilentAim.Update", v219, "Update", arg2)
 v232:Update()
 v233:Update()
-v198:Update(arg2)
+gPerfCall("Status.Update", v198, "Update", arg2)
 v199:FlushViewAngles()
 end)
 
